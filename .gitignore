@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-*/
+*.tsbuildinfo
+coverage/
+.env
+.claude/worktrees/
+.superpowers

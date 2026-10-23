@@ -1,0 +1,33 @@
+{
+  "name": "ts-polyglot-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Import functions from C, C++ and Rust source files into TypeScript",
+  "license": "MIT",
+  "author": "Evgen Mykhailenko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mykhailen/ts-polyglot.git"
+  },
+  "homepage": "https://github.com/mykhailen/ts-polyglot#readme",
+  "bugs": "https://github.com/mykhailen/ts-polyglot/issues",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run build && npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "test:linux": "node scripts/linux.cjs",
+    "example": "npm run build && npm start -w native-demo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "7.1.0-beta"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

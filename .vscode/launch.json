@@ -1,0 +1,76 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // Runs the example under the debugger: breakpoints in examples/native-demo/main.ts, and in
+      // packages/ts-polyglot/src/register.ts and build.ts when an addon is (re)built.
+      "name": "Example: main.ts",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "example"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // Native half of the "Example: TS + native" compound. Starts node under the Visual Studio
+      // C++ debugger, paused for the JS debugger (--inspect-brk), with addons built unoptimized
+      // and with .pdb files (TS_POLYGLOT_DEBUG=1). Breakpoints in add.cpp, geometry.c and
+      // numbers.rs bind once the addon loads. node comes from nvm on this machine.
+      "name": "Example: native half",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "${env:NVM_SYMLINK}\\node.exe",
+      "args": ["--inspect-brk=9229", "--import", "ts-polyglot/register", "main.ts"],
+      "cwd": "${workspaceFolder}/examples/native-demo",
+      "environment": [{ "name": "TS_POLYGLOT_DEBUG", "value": "1" }],
+      "console": "integratedTerminal"
+    },
+    {
+      // TypeScript half: attaches to that same node process, sets breakpoints, and lets it run.
+      "name": "Example: TypeScript half",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "continueOnAttach": true,
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // Type-checks the example under the debugger. tsc.exe starts the content mapper and the
+      // debugger follows it there, so breakpoints in mapper.ts, declarations.ts and signatures.ts
+      // hit. TS_CONTENT_MAPPER_DEBUG prints every JSON-RPC message, virtual text included.
+      // tsc gives `initialize` 5 seconds; `transform` may stay paused as long as you like.
+      // The mapper runs from dist/, so the build runs first; breakpoints bind through source maps.
+      "name": "Mapper: debug under tsc",
+      "type": "node",
+      "request": "launch",
+      "preLaunchTask": "npm: build",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "typecheck", "-w", "native-demo"],
+      "env": { "TS_CONTENT_MAPPER_DEBUG": "1" },
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // Attaches to the mapper the TypeScript 7 language server started for the editor: pick
+      // "node dist/mapper.js", then type in a .c/.cpp/.rs file to trigger a transform.
+      "name": "Mapper: attach to the editor's mapper",
+      "type": "node",
+      "request": "attach",
+      "processId": "${command:PickProcess}",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      // Both debuggers on one node.exe: stop in main.ts, then step over a call and a breakpoint in
+      // the C, C++ or Rust function stops there. There is no single F11 across the boundary.
+      // The hook runs from dist/, so the build runs first.
+      "name": "Example: TS + native",
+      "configurations": ["Example: native half", "Example: TypeScript half"],
+      "preLaunchTask": "npm: build",
+      "stopAll": true
+    }
+  ]
+}

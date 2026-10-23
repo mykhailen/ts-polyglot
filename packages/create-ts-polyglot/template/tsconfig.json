@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "strict": true,
+    "noEmit": true
+  },
+  "contentMappers": [
+    { "package": "ts-polyglot", "extensions": [".c", ".cpp", ".rs"] }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "name": "ts-polyglot",
+  "version": "0.1.0",
+  "description": "Import functions from C, C++ and Rust files into TypeScript. A content mapper types them; a Node-API addon built on import runs them.",
+  "license": "MIT",
+  "author": "Evgen Mykhailenko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mykhailen/ts-polyglot.git",
+    "directory": "packages/ts-polyglot"
+  },
+  "homepage": "https://github.com/mykhailen/ts-polyglot/tree/main/packages/ts-polyglot#readme",
+  "bugs": "https://github.com/mykhailen/ts-polyglot/issues",
+  "keywords": ["typescript", "content-mapper", "node-api", "napi", "native", "addon", "ffi", "c", "cpp", "rust", "import"],
+  "type": "module",
+  "exports": {
+    "./register": "./dist/register.js"
+  },
+  "files": ["dist", "src"],
+  "typescript": {
+    "contentMapper": {
+      "exec": ["node", "dist/mapper.js"]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p .",
+    "test": "npm run build && node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "node-api-headers": "^1.9.0"
+  },
+  "peerDependencies": {
+    "typescript": "7.1.0-beta"
+  },
+  "peerDependenciesMeta": {
+    "typescript": { "optional": true }
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

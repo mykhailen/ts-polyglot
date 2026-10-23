@@ -1,0 +1,32 @@
+{
+  "name": "create-ts-polyglot",
+  "version": "0.1.0",
+  "description": "Scaffold a TypeScript project that imports C, C++ and Rust files with ts-polyglot: npm create ts-polyglot",
+  "license": "MIT",
+  "author": "Evgen Mykhailenko",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mykhailen/ts-polyglot.git",
+    "directory": "packages/create-ts-polyglot"
+  },
+  "homepage": "https://github.com/mykhailen/ts-polyglot/tree/main/packages/create-ts-polyglot#readme",
+  "bugs": "https://github.com/mykhailen/ts-polyglot/issues",
+  "keywords": ["create", "scaffold", "template", "typescript", "ts-polyglot", "native", "c", "cpp", "rust"],
+  "type": "module",
+  "bin": {
+    "create-ts-polyglot": "dist/cli.js"
+  },
+  "files": ["dist", "template"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc -p .",
+    "test": "npm run build && node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  // Emits dist/, which `exports` and the mapper's `exec` point at. Node refuses to strip types from
+  // files under node_modules, so an installed copy can't run src/. Source maps keep breakpoints in
+  // src/ working.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

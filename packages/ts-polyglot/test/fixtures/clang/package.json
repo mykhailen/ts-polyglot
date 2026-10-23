@@ -1,0 +1,6 @@
+{
+  "name": "clang-fixture",
+  "private": true,
+  "type": "module",
+  "ts-polyglot": { "compiler": "clang" }
+}

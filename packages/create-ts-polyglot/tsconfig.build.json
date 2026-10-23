@@ -1,0 +1,14 @@
+{
+  // Emits dist/, which `bin` points at. Node refuses to strip types from files under node_modules, so
+  // an installed copy can't run src/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}

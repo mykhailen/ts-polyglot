@@ -1,0 +1,14 @@
+{
+  // Type-checks the package's source and tests. What runs is the JavaScript that tsconfig.build.json
+  // emits. template/ is a project of its own, exercised by the end-to-end tests.
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src", "test"]
+}

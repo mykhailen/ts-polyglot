@@ -1,0 +1,14 @@
+{
+  "name": "native-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Imports C, C++ and Rust functions into TypeScript with ts-polyglot",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --runExternalCode",
+    "start": "node --import ts-polyglot/register main.ts"
+  },
+  "dependencies": {
+    "ts-polyglot": "*"
+  }
+}

@@ -1,0 +1,31 @@
+# Type-checks, tests and runs the example on every OS ts-polyglot supports, with the real compilers.
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04-arm (arm64 Linux) and macos-15-intel (x64 macOS) need those runners on the
+        # account: drop a line if its job never starts.
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The compiler-choice tests need clang on Linux. The hosted images usually have it already.
+      - name: Install clang
+        if: runner.os == 'Linux'
+        shell: bash
+        run: command -v clang || (sudo apt-get update && sudo apt-get install -y clang)
+      - name: Install Rust
+        shell: bash
+        run: command -v rustc || (curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH")
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run example

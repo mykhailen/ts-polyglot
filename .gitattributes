@@ -1,0 +1,3 @@
+# LF everywhere, whatever core.autocrlf says on the machine: the packed template files and the
+# built CLI's shebang line ship from whichever checkout runs `npm publish`.
+* text=auto eol=lf
