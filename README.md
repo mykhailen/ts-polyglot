@@ -1,11 +1,14 @@
 <h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
-    <img src="assets/logo.svg" alt="ts-polyglot" width="320">
-  </picture>
+  <a href="https://ts-polyglot.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+      <img src="assets/logo.svg" alt="ts-polyglot" width="320">
+    </picture>
+  </a>
 </h1>
 
 [![CI](https://github.com/mykhailen/ts-polyglot/actions/workflows/ci.yml/badge.svg)](https://github.com/mykhailen/ts-polyglot/actions/workflows/ci.yml)
+· Website: [ts-polyglot.dev](https://ts-polyglot.dev/)
 
 Import functions from C, C++ and Rust source files straight into TypeScript, with real types:
 
