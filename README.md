@@ -7,8 +7,11 @@
   </a>
 </p>
 
+<div align="center">
+
 [![CI](https://github.com/mykhailen/ts-polyglot/actions/workflows/ci.yml/badge.svg)](https://github.com/mykhailen/ts-polyglot/actions/workflows/ci.yml)
-· Website: [ts-polyglot.dev](https://ts-polyglot.dev/)
+
+</div>
 
 https://github.com/user-attachments/assets/98d0c114-84fd-4474-8083-18186326a729
 
