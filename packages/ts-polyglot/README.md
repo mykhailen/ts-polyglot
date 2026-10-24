@@ -70,7 +70,8 @@ machines without breaking its Windows ones.
 
 ## How it works
 
-Both halves read signatures with the same parser, [src/signatures.ts](src/signatures.ts).
+Both halves read signatures with the same parser: tree-sitter, through one module per language under
+[src/languages/](src/languages/), with the grammars vendored in [grammars/](grammars/).
 
 - **Types: a content mapper** ([src/mapper.ts](src/mapper.ts), [src/declarations.ts](src/declarations.ts)).
   For `add.cpp`, tsc checks `export declare function add(a: number, b: number): number;`.
@@ -89,11 +90,12 @@ Both halves read signatures with the same parser, [src/signatures.ts](src/signat
 
 | Language | Functions | Types |
 | --- | --- | --- |
-| C, C++ | top-level, non-`static`; `extern "C"` is fine, and so are `__declspec(dllexport)` and `__cdecl` on Windows | `int`, `unsigned`, `short`, `long`, `long long`, `(u)intN_t`, `float`, `double`, `bool`, `void` |
-| Rust | top-level `pub fn` and `pub extern "C" fn` | `i8`–`i64`, `u8`–`u32`, `f32`, `f64`, `bool`, `()` |
+| C, C++ | definitions that aren't `static`, at the top level, inside `extern "C" { }` blocks or inside named namespaces; attributes, `constexpr`, `noexcept`, trailing return types, default arguments (still required in TypeScript), `__declspec(dllexport)` and `__cdecl` are fine | `int`, `unsigned`, `short`, `long`, `long long`, `(u)intN_t`, `float`, `double`, `bool`, `void` |
+| Rust | `pub fn`, `pub extern "C" fn` and `pub const fn`, at the top level or inside `pub mod`s | `i8`–`i64`, `u8`–`u32`, `f32`, `f64`, `bool`, `()` |
 
 Everything else is skipped, so importing it is a "has no exported member" error in TypeScript. That
-includes pointers, strings, structs, namespaces, `extern "C" { }` blocks, generics and overloads.
+includes pointers, references, strings, structs, templates and generics, overloads past the first,
+`unsafe` and `async` functions, and class methods. A half-typed file keeps its intact functions.
 
 ## Limits
 
@@ -101,6 +103,8 @@ includes pointers, strings, structs, namespaces, `extern "C" { }` blocks, generi
   Node must be x64.
 - Compile errors in the native file only appear when Node imports it, not in `tsc`.
 - Headers a C file includes are not part of the cache key. After editing a header, delete the cache.
+- An unknown macro before a function's return type (`MYAPI int f(int)`) hides the function: the
+  parser reads the file with tree-sitter and doesn't expand macros.
 - `long`, `long long`, `int64_t` and `i64` become JavaScript numbers, so values above 2^53 lose
   precision. `unsigned long` is skipped: 64-bit unsigned values aren't supported yet.
 - The runtime hook compiles and loads native code from any imported `.c`, `.cpp` or `.rs` file.

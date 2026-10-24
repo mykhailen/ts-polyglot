@@ -43,7 +43,9 @@ What the beta actually sends (**measured** with `TS_CONTENT_MAPPER_DEBUG=1`):
 - **Request ids** are strings: `"api1"`, `"api2"`, ...
 - **`openProject`:** `projectHandle` looks like `"<package>@<version>:0"`, and `compilerOptions` arrives
   with numeric enums (for example `module: 199` for nodenext). One process serves every project that
-  uses the same package and version, so any per-project state must be keyed by `projectHandle`.
+  uses the same package and version, so any per-project state must be keyed by `projectHandle`. The
+  params also carry `configFileName`, the tsconfig's path, but not the mapper's extension list: a
+  mapper that wants its extensions has to read the tsconfig itself (**measured**).
 - **`transform`:** `{ fileName, content, projectHandle }` → `{ text, extension, mappings?, diagnostics?, supplemental? }`.
   - `text` is the TypeScript (or JS or JSON) to check instead of the file.
   - Built-in extensions such as `.ts` and `.json` can't be registered for mapping.

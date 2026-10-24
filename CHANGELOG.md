@@ -6,6 +6,19 @@ release notes ([docs/releasing.md](docs/releasing.md)).
 
 ## ts-polyglot
 
+### 0.3.0 (unreleased)
+
+- Native files are parsed with tree-sitter (`web-tree-sitter`, with the C, C++ and Rust grammars
+  vendored under `grammars/`, about 5 MB unpacked), one walker per language. Found now: functions
+  inside `extern "C" { }` blocks, named namespaces and Rust `pub mod`s, exported under their own
+  name; functions with attributes, `constexpr`, `noexcept`, a trailing return type or default
+  arguments; `pub const fn`. A half-typed file keeps its intact functions, so the editor's types
+  don't vanish while you type. Still skipped: pointers, references, strings, structs, templates and
+  generics, overloads past the first, `unsafe` and `async` functions, and a function behind an
+  unknown macro.
+- The runtime hook preloads the grammars at `--import` time, about 25 ms; the type side loads one
+  the first time it sees a file of that language.
+
 ### 0.2.0 (2026-10-23)
 
 - An import of a native file now resolves to a generated module in the addon cache, instead of the
@@ -31,6 +44,10 @@ First release.
   not yet verified.
 
 ## create-ts-polyglot
+
+### 0.3.0 (unreleased)
+
+- The template asks for ts-polyglot 0.3.0.
 
 ### 0.2.0 (2026-10-23)
 

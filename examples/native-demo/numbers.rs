@@ -14,3 +14,10 @@ pub fn is_prime(n: u32) -> bool {
 
 // Not `pub`, so not exported.
 fn unused_helper() {}
+
+// A `pub fn` inside a `pub mod` exports too, under its own name: `import { clamp }`.
+pub mod stats {
+    pub fn clamp(x: i32, lo: i32, hi: i32) -> i32 {
+        x.max(lo).min(hi)
+    }
+}

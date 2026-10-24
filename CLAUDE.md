@@ -28,14 +28,17 @@ setup), none of which is written down anywhere else.
 
 | Path | What |
 | --- | --- |
-| `packages/ts-polyglot/src/signatures.ts` | finds exportable functions in C, C++ and Rust; the `Kind` tables say how each type crosses into JavaScript |
+| `packages/ts-polyglot/src/signatures.ts` | the shared shapes: `NativeFunction`, `Param`, `Kind` and the `Kind` constants |
+| `packages/ts-polyglot/src/languages/` | one module per language behind `LanguageModule` (`id`, `extensions`, `grammar`, `functions(root, source)`): `c.ts` and `cpp.ts` share the walker in `c-family.ts`, `rust/` has its walker and the wrapper-crate build; `index.ts` is the registry (`languageOf`, `loadLanguage`, `findFunctions`) and where a language is registered |
+| `packages/ts-polyglot/src/parser.ts` | web-tree-sitter: loads a grammar from `grammars/` once per process; parsing is synchronous |
+| `packages/ts-polyglot/grammars/` | the vendored tree-sitter `.wasm` grammars, `manifest.json` (repository, tag, SHA-256) and each grammar's LICENSE; `npm run grammars -- check` verifies them, `update <id> [tag]` re-pins one from its GitHub release |
 | `packages/ts-polyglot/src/declarations.ts` | the virtual TypeScript and span mappings returned by `transform` |
 | `packages/ts-polyglot/src/mapper.ts` | the content mapper process (JSON-RPC over stdio) |
 | `packages/ts-polyglot/src/protocol.ts` | the protocol types it uses |
 | `packages/ts-polyglot/src/build.ts` | Node-API glue generation, the Rust wrapper crate, the addon cache |
 | `packages/ts-polyglot/src/compiler.ts` | picks the compiler for a file: `CC`/`CXX`, the `"ts-polyglot"` field in package.json, or the platform default; spawns nothing |
 | `packages/ts-polyglot/src/toolchain.ts` | the build commands: MSVC (`vswhere`, `vcvars64.bat`, the Node-API import library) and gcc/clang on Linux and macOS |
-| `packages/ts-polyglot/src/register.ts` | the Node resolve hook: an import of a native file resolves to the generated module in the cache |
+| `packages/ts-polyglot/src/register.ts` | loads every grammar (a top-level await, which `--import` waits for), then installs the synchronous Node resolve hook: an import of a native file resolves to the generated module in the cache |
 | `packages/ts-polyglot/test/` | `node:test` suites: unit tests import `src/`; `e2e.test.ts` runs the real `tsc` and `node` (so `dist/`) over the projects in `test/fixtures/`; `pack.test.ts` installs the packed tarball outside the repo, as a user would |
 | `packages/ts-polyglot/dist/` | what actually runs: JavaScript and source maps from `tsconfig.build.json`, which `exports` and the mapper's `exec` point at (git-ignored) |
 | `examples/native-demo/` | a consumer project: `add.cpp`, `geometry.c`, `numbers.rs`, `main.ts` |
@@ -57,6 +60,7 @@ npm run test:linux             # npm ci, typecheck, test, example and the probe 
 npm run example                # build, then run the example; addons build on first import (about 3 s cold)
 node scripts/lsp-probe.cjs     # hover, definition, references, rename and live-edit results from the language server
 node packages/create-ts-polyglot/dist/cli.js my-app --no-install   # the scaffold from this checkout; `npm install <tarball>` in the result, as e2e.test.ts does
+npm run grammars -- check      # the vendored tree-sitter grammars match grammars/manifest.json; `update <id> [tag]` re-pins one from its GitHub release
 npm run release -- 0.2.0       # or patch|minor|major: the release commit and tag; `git push origin main v0.2.0` then publishes (docs/releasing.md)
 ```
 
@@ -92,6 +96,8 @@ them unbound.
   optional, because the runtime hook doesn't need TypeScript. Because the pin is exact, npm refuses
   (`ERESOLVE`) to install ts-polyglot next to any other TypeScript, including `latest` and nightlies.
   Widen it when 7.1.0 ships.
+- `web-tree-sitter` is pinned exactly too (`0.27.1`): the runtime and the grammar binaries in
+  `grammars/` are ABI-coupled. Bump them together, deliberately; `test/grammars.test.ts` is the check.
 - In VS Code the TypeScript 7 extension must use the workspace version: **TypeScript: Select
   TypeScript Version… → Use Workspace Version**. Its bundled 7.0.2 has no content mappers.
 
@@ -124,6 +130,10 @@ them unbound.
 - **Comments say why, not what.** Match the density of the existing files.
 - **Bump `GLUE_VERSION` in `build.ts`** whenever the generated C, C++, Rust or JavaScript, or the
   compiler flags, change, so cached addons rebuild.
+- **Adding a language:** `npm run grammars -- update <id> <tag> <owner/name>` pins its grammar; a
+  module under `src/languages/` implements `LanguageModule` and joins `languages` in `index.ts`; a
+  `test/<id>.test.ts` pins its walker. The build half (toolchain, glue) is still shared code in
+  `build.ts` and `toolchain.ts`, until the marshaling design says what a language provides there.
 - **Mapper rules** (details in the docs):
   - Verbatim spans must be identical text on both sides.
   - `transform` diagnostics stop all type checking, so don't use them for "unsupported, skipped".
@@ -133,10 +143,8 @@ them unbound.
 
 ## Open work, roughly in priority order
 
-1. **More tests.** The suite follows the lab's pattern
-  Still missing:
-   - parser unit tests beyond the type tables: headers, comments, `static`, overloads, Rust `pub fn`;
-   - mapper tests: the `transform` text and span mappings, and error locations in the native file.
+1. **More tests.** The suite follows the lab's pattern. Still missing: error locations in the native
+   file, once item 2 produces diagnostics.
 2. **Compile errors in `tsc` and the editor.** Run a syntax-only compile in `transform` and return
    the errors as mapper diagnostics. Accept that they block type checking, the same as syntax errors.
 3. **More types:** strings (`const char*`, `&str`/`String`), buffers and pointers, structs, and
@@ -149,8 +157,10 @@ them unbound.
    npmjs.com for both packages (workflow `release.yml`, allow `npm publish`); a new configuration
    expires after 2 days without a publish, so do it right before releasing. After the first CI
    publish: require 2FA and disallow tokens. Later, possibly prebuilt binaries.
-6. **Parser gaps:**
-   - `extern "C" { }` blocks and namespaces aren't scanned;
+6. **Parser limits:**
+   - an unknown macro before the return type (`MYAPI int f(int)`) hides the function;
+   - every branch of a preprocessor conditional is scanned, and a name defined in two of them is
+     exported once, from the first;
    - only the first of a set of overloads is kept;
    - included headers aren't part of the cache key.
 7. **Trust.** `tsc` gates the mapper behind `--runExternalCode`, and VS Code gates it behind workspace
