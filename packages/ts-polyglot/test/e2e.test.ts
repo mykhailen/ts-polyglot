@@ -52,6 +52,9 @@ test("C, C++ and Rust functions run", () => {
   assert.equal(output.multiply, 42);
   assert.equal(output.fib, 12586269025);
   assert.equal(output.echo, -5);
+  // A function in a namespace, and one in a `pub mod`: the glue calls them by their qualified names.
+  assert.equal(output.scale, 12);
+  assert.equal(output.clamp, 10);
 });
 
 test("a C function named like a libc function runs, not libc's", () => {

@@ -18,7 +18,7 @@ import type { NativeFunction } from "./signatures.ts";
 import { compileAddon, run, rustStaticLibName, rustTargetArgs } from "./toolchain.ts";
 
 // Bump to rebuild every cached addon after changing the generated code or the compiler flags.
-const GLUE_VERSION = 5;
+const GLUE_VERSION = 6;
 // Linux and macOS bind an addon's symbols lazily, so a function the native file declares but never
 // defines would kill node at its first call. RTLD_NOW fails the import instead, catchably. Windows
 // has no dlopen flags; its linker already refuses such an addon.
@@ -61,7 +61,9 @@ export function buildAddon(file: string, source: string): string {
     writeFileSync(glue, glueSource(functions, functions.map(rustPrototype).join("\n"), (fn) => `ts_polyglot__${fn.name}`));
   } else {
     glue = join(dir, language === "cpp" ? "glue.cpp" : "glue.c");
-    writeFileSync(glue, glueSource(functions, `#include "${file.replaceAll("\\", "/")}"`, (fn) => fn.name));
+    // The qualified name: a function inside a namespace is exported under its own name but called
+    // through the namespace.
+    writeFileSync(glue, glueSource(functions, `#include "${file.replaceAll("\\", "/")}"`, (fn) => fn.callee));
   }
   compileAddon(compiler, { language: glueLanguage, glue, libs, out: addon, debug, cacheRoot });
   writeFileSync(module, moduleSource(file, addon, functions));
@@ -149,7 +151,7 @@ function rustStaticLib(file: string, functions: NativeFunction[], dir: string, l
 function rustWrapper(fn: NativeFunction): string {
   const params = fn.params.map((p) => `${p.name}: ${p.kind.rust}`).join(", ");
   const args = fn.params.map((p) => (p.type === p.kind.rust ? p.name : `${p.name} as ${p.type}`)).join(", ");
-  const call = `user::${fn.name}(${args})`;
+  const call = `user::${fn.callee}(${args})`;
   if (fn.returns.ts === "void") return `#[no_mangle]\npub extern "C" fn ts_polyglot__${fn.name}(${params}) {\n    ${call};\n}\n`;
   const body = fn.returnType === fn.returns.rust ? call : `${call} as ${fn.returns.rust}`;
   return `#[no_mangle]\npub extern "C" fn ts_polyglot__${fn.name}(${params}) -> ${fn.returns.rust} {\n    ${body}\n}\n`;

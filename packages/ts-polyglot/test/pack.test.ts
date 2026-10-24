@@ -57,6 +57,8 @@ test("C, C++ and Rust functions run from the installed tarball", { skip }, () =>
   assert.equal(output.multiply, 42);
   assert.equal(output.fib, 12586269025);
   assert.equal(output.echo, -5);
+  assert.equal(output.scale, 12);
+  assert.equal(output.clamp, 10);
 });
 
 test("the tarball carries the license", { skip }, () => {
