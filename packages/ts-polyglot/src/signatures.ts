@@ -24,17 +24,17 @@ export interface Kind {
   toJs: string;
 }
 
-const I32: Kind = { ts: "number", c: "int32_t", rust: "i32", fromJs: "napi_get_value_int32", toJs: "napi_create_int32" };
-const U32: Kind = { ts: "number", c: "uint32_t", rust: "u32", fromJs: "napi_get_value_uint32", toJs: "napi_create_uint32" };
-const I64: Kind = { ts: "number", c: "int64_t", rust: "i64", fromJs: "napi_get_value_int64", toJs: "napi_create_int64" };
-const F64: Kind = { ts: "number", c: "double", rust: "f64", fromJs: "napi_get_value_double", toJs: "napi_create_double" };
-const BOOL: Kind = { ts: "boolean", c: "bool", rust: "bool", fromJs: "napi_get_value_bool", toJs: "napi_get_boolean" };
-const VOID: Kind = { ts: "void", c: "void", rust: "()", fromJs: "", toJs: "" };
+export const I32: Kind = { ts: "number", c: "int32_t", rust: "i32", fromJs: "napi_get_value_int32", toJs: "napi_create_int32" };
+export const U32: Kind = { ts: "number", c: "uint32_t", rust: "u32", fromJs: "napi_get_value_uint32", toJs: "napi_create_uint32" };
+export const I64: Kind = { ts: "number", c: "int64_t", rust: "i64", fromJs: "napi_get_value_int64", toJs: "napi_create_int64" };
+export const F64: Kind = { ts: "number", c: "double", rust: "f64", fromJs: "napi_get_value_double", toJs: "napi_create_double" };
+export const BOOL: Kind = { ts: "boolean", c: "bool", rust: "bool", fromJs: "napi_get_value_bool", toJs: "napi_get_boolean" };
+export const VOID: Kind = { ts: "void", c: "void", rust: "()", fromJs: "", toJs: "" };
 
 // `long` is 32-bit on Windows but 64-bit on Linux and macOS, so it crosses as 64-bit everywhere and
 // every OS sees the same functions. `unsigned long` would need 64-bit unsigned values, which don't
 // cross yet.
-const C_TYPES: Record<string, Kind> = {
+export const C_TYPES: Record<string, Kind> = {
   int: I32, "signed int": I32, short: I32, int8_t: I32, int16_t: I32, int32_t: I32,
   unsigned: U32, "unsigned int": U32, "unsigned short": U32, uint8_t: U32, uint16_t: U32, uint32_t: U32,
   long: I64, "long long": I64, int64_t: I64,
@@ -43,7 +43,7 @@ const C_TYPES: Record<string, Kind> = {
   void: VOID,
 };
 
-const RUST_TYPES: Record<string, Kind> = {
+export const RUST_TYPES: Record<string, Kind> = {
   i8: I32, i16: I32, i32: I32, u8: U32, u16: U32, u32: U32, i64: I64, f32: F64, f64: F64, bool: BOOL, "()": VOID,
 };
 
@@ -59,6 +59,8 @@ export interface Param {
 export interface NativeFunction {
   name: string;
   nameStart: number;
+  /** What the generated glue calls: `geo::area` for a function in a namespace, `inner::nested` in a Rust mod, else the name. */
+  callee: string;
   params: Param[];
   /** The result type as written. */
   returnType: string;
@@ -103,7 +105,7 @@ function blankNonCode(source: string, language: Language): string {
   return source.replace(language === "rust" ? RUST_NOISE : C_NOISE, (text) => text.replace(/[^\n]/g, " "));
 }
 
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 const normalizeC = (type: string) => oneLine(type.replace(/\bconst\b/g, " "));
 
 const C_HEADER = /^\s*(.+?)\s+([A-Za-z_]\w*)\s*\(([^()]*)\)\s*$/d;
@@ -120,6 +122,7 @@ function cHeader(code: string, start: number, end: number): NativeFunction | und
   return {
     name,
     nameStart: start + match.indices![2]![0],
+    callee: name,
     params,
     returnType: normalizeC(rawType),
     returns,
@@ -170,6 +173,7 @@ function rustHeader(code: string, start: number, end: number): NativeFunction | 
   return {
     name,
     nameStart: start + match.indices![1]![0],
+    callee: name,
     params,
     returnType: rawReturn,
     returns,
