@@ -8,7 +8,9 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    // web-tree-sitter's .d.ts names EmscriptenModule without bringing @types/emscripten along.
+    "skipLibCheck": true
   },
   "include": ["src", "test"],
   "exclude": ["test/fixtures"]
