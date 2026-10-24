@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 
 const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const packageDir = fileURLToPath(new URL("../", import.meta.url));
@@ -56,7 +57,9 @@ test("the project it creates type-checks and runs", { skip }, () => {
   // typescript and @types/node come from npm's cache, filled when the repo was installed.
   npm(["install", join(root, filename), "--prefer-offline", "--no-audit", "--no-fund"], project);
   npm(["run", "typecheck"], project);
-  const stdout = npm(["start"], project, { TS_POLYGLOT_CACHE_DIR: join(root, "cache") });
+  // In a terminal that defines FORCE_COLOR (VS Code's debug terminal, for one), console.log colors
+  // the values even into this pipe.
+  const stdout = stripVTControlCharacters(npm(["start"], project, { TS_POLYGLOT_CACHE_DIR: join(root, "cache") }));
   assert.match(stdout, /add\(1, 2\)\s+= 3/);
   assert.match(stdout, /fib\(50\)\s+= 12586269025/);
 });
