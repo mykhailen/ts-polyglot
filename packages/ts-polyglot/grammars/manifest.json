@@ -1,0 +1,20 @@
+{
+  "c": {
+    "repository": "tree-sitter/tree-sitter-c",
+    "tag": "v0.24.2",
+    "asset": "tree-sitter-c.wasm",
+    "sha256": "83e8d7902b9d7f8c7c5cd4bd9acb5c7eb5faf42c09f85546b183964d3b5f48f9"
+  },
+  "cpp": {
+    "repository": "tree-sitter/tree-sitter-cpp",
+    "tag": "v0.23.4",
+    "asset": "tree-sitter-cpp.wasm",
+    "sha256": "174eb0deb75b2ec7881bcacda9f995648d8e683956e5c2267e69ab6dc503fcbf"
+  },
+  "rust": {
+    "repository": "tree-sitter/tree-sitter-rust",
+    "tag": "v0.24.2",
+    "asset": "tree-sitter-rust.wasm",
+    "sha256": "24c89bd9252255e4aebbcbd7d2d308bd92c86dd95a130fdc80efa49577b8d738"
+  }
+}

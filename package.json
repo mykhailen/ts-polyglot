@@ -22,6 +22,7 @@
     "test": "node --test \"scripts/*.test.ts\" && npm test --workspaces --if-present",
     "test:linux": "node scripts/linux.cjs",
     "example": "npm run build && npm start -w native-demo",
+    "grammars": "node scripts/grammars.ts",
     "release": "node scripts/release.ts prepare"
   },
   "devDependencies": {
