@@ -6,6 +6,15 @@ release notes ([docs/releasing.md](docs/releasing.md)).
 
 ## ts-polyglot
 
+### 0.2.0 (unreleased)
+
+- An import of a native file now resolves to a generated module in the addon cache, instead of the
+  generated JavaScript being loaded under the native file's URL. The JavaScript debugger no longer
+  takes `add.cpp` for a script: a breakpoint set there is left to the native debugger, where before
+  it bound to the generated text, stopped there on import, and opened that text as a second,
+  read-only `add.cpp`.
+- Published by the Release workflow from a `v*` tag, with npm provenance.
+
 ### 0.1.0 (2026-10-23)
 
 First release.
@@ -16,14 +25,23 @@ First release.
   TypeScript 7 editor extension. Hover, go-to-definition, references and rename reach into the
   native file.
 - Functions come from a Node hook, `node --import ts-polyglot/register`. Each file is compiled into
-  a Node-API addon on first import and cached by source hash. The import resolves to a generated
-  module in the cache, so a JavaScript debugger leaves breakpoints in the native file to the native
-  debugger.
+  a Node-API addon on first import and cached by source hash.
 - Compilers: MSVC on Windows x64; `cc`, gcc or clang on Linux and macOS, chosen with `CC`/`CXX` or
   the `"ts-polyglot"` field in package.json. Rust files need `rustc`. macOS support is written but
   not yet verified.
 
 ## create-ts-polyglot
+
+### 0.2.0 (unreleased)
+
+- F5 debugs `main.ts` and the native code in one session. `launch.json` is written for the OS the
+  project is created on: the Visual Studio debugger on Windows, gdb or lldb through the C/C++
+  extension on Linux and macOS. On those two it hasn't been tried yet, so F5 stays TypeScript-only
+  there and "Debug TypeScript + native" waits in the dropdown. The native debugger launches the node
+  that ran `npm create`, by full path; when that was bun or deno, the first node on PATH.
+- `extensions.json` also recommends the C/C++ extension, and the closing steps say so.
+- The template asks for ts-polyglot 0.2.0.
+- Published by the Release workflow from a `v*` tag, with npm provenance.
 
 ### 0.1.0 (2026-10-23)
 
@@ -31,8 +49,7 @@ First release.
 
 - `npm create ts-polyglot` writes a project with a C, a C++ and a Rust file imported from
   `main.ts`, the `contentMappers` entry in tsconfig.json, `typecheck` and `start` scripts, and
-  optionally the VS Code settings, extension recommendations and the F5 configurations for the OS:
-  TypeScript and native code debugged together (the default on Windows; written but not yet tried
-  on Linux and macOS).
+  optionally the VS Code settings, the TypeScript 7 extension recommendation and an F5
+  configuration for `main.ts`.
 - Installs with the package manager that ran it, checks for the compilers and reports what's
   missing.
