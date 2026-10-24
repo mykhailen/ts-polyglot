@@ -1,0 +1,57 @@
+// The C++-only parts of the shared walker: linkage blocks, namespaces and the declarator forms the
+// C grammar doesn't have. The common rules are in c.test.ts.
+import assert from "node:assert/strict";
+import test, { before } from "node:test";
+
+import { findFunctions, loadLanguage } from "../src/languages/index.ts";
+
+before(() => loadLanguage("cpp"));
+const find = (source: string) => findFunctions(source, "cpp");
+
+test('extern "C" in both forms', () => {
+  const found = find('extern "C" int one(int a) { return a; }\nextern "C" {\n  int two(int a) { return a; }\n}\n');
+  assert.deepEqual(found.map((f) => [f.name, f.callee, f.signature]), [["one", "one", "int one(int a)"], ["two", "two", "int two(int a)"]]);
+});
+
+test("functions in namespaces export their unqualified name with a qualified callee", () => {
+  const found = find("namespace geo { namespace shapes { double area(double r) { return r; } } }\nnamespace a::b { int f(int x) { return x; } }\n");
+  assert.deepEqual(found.map((f) => [f.name, f.callee, f.signature]), [["area", "geo::shapes::area", "double area(double r)"], ["f", "a::b::f", "int f(int x)"]]);
+});
+
+test("anonymous namespaces and out-of-line qualified definitions are skipped", () => {
+  assert.deepEqual(find("namespace { int hidden(int a) { return a; } }\nnamespace geo { int f(int); }\nint geo::f(int a) { return a; }\n"), []);
+});
+
+test("templates are skipped and only the first overload is kept", () => {
+  const found = find("template <typename T> T twice(T x) { return x + x; }\nint over(int a) { return a; }\nint over(int a, int b) { return a + b; }\n");
+  assert.deepEqual(found.map((f) => [f.name, f.params.length]), [["over", 1]]);
+});
+
+test("attributes, constexpr, noexcept and a trailing return type don't hide a function", () => {
+  const [f, g] = find("[[nodiscard]] constexpr int f(int a) noexcept { return a; }\nauto g(int a) -> int { return a; }\n");
+  assert.equal(f?.returnType, "int");
+  assert.equal(f?.signature, "int f(int a) noexcept");
+  assert.equal(g?.returnType, "int");
+  assert.equal(g?.signature, "auto g(int a) -> int");
+});
+
+test("auto without a trailing return type is skipped", () => {
+  assert.deepEqual(find("auto f(int a) { return a; }"), []);
+});
+
+test("a default argument is a required parameter for now", () => {
+  const [fn] = find("int f(int a, int b = 2) { return a + b; }");
+  assert.deepEqual(fn?.params.map((p) => [p.name, p.type]), [["a", "int"], ["b", "int"]]);
+});
+
+test("references skip the function", () => {
+  assert.deepEqual(find("#include <string>\nint f(const std::string& s) { return 0; }\nint g(int& r) { return r; }"), []);
+});
+
+test("a class method is not a function, its neighbor is", () => {
+  assert.deepEqual(find("struct S { int m(int a) { return a; } };\nint free_fn(int a) { return a; }\n").map((f) => f.name), ["free_fn"]);
+});
+
+test("a half-typed C++ file keeps the functions before the break", () => {
+  assert.deepEqual(find("namespace n { int ok(int a) { return a; } }\nint partial(int a,").map((f) => f.callee), ["n::ok"]);
+});

@@ -13,20 +13,30 @@ const CONTAINERS = new Set(["translation_unit", "declaration_list", "preproc_if"
 
 export function cFamilyFunctions(root: Node, source: string): NativeFunction[] {
   const found: NativeFunction[] = [];
-  visit(root, source, found);
+  visit(root, [], source, found);
   return found;
 }
 
-function visit(node: Node, source: string, found: NativeFunction[]): void {
+function visit(node: Node, namespaces: readonly string[], source: string, found: NativeFunction[]): void {
   if (node.type === "function_definition") {
-    const fn = definition(node, source);
+    const fn = definition(node, namespaces, source);
     if (fn) found.push(fn);
   } else if (CONTAINERS.has(node.type)) {
-    for (const child of node.namedChildren) visit(child, source, found);
+    for (const child of node.namedChildren) visit(child, namespaces, source, found);
+  } else if (node.type === "linkage_specification") {
+    // `extern "C" { ... }` has a declaration list for a body; `extern "C" int f() {}` the definition itself.
+    const body = node.childForFieldName("body");
+    if (body) visit(body, namespaces, source, found);
+  } else if (node.type === "namespace_definition") {
+    // An anonymous namespace has internal linkage, like `static`. `namespace a::b` is one name node.
+    const name = node.childForFieldName("name");
+    const body = node.childForFieldName("body");
+    if (name && body) visit(body, [...namespaces, name.text.replace(/\s+/g, "")], source, found);
   }
+  // Templates, classes and prototypes (`declaration`) are among what falls through.
 }
 
-function definition(node: Node, source: string): NativeFunction | undefined {
+function definition(node: Node, namespaces: readonly string[], source: string): NativeFunction | undefined {
   // `static` keeps a function private to its file; `main` is the program, not a library function.
   if (node.children.some((child) => child.type === "storage_class_specifier" && child.text === "static")) return undefined;
   const type = node.childForFieldName("type");
@@ -34,15 +44,18 @@ function definition(node: Node, source: string): NativeFunction | undefined {
   // Anything but a function declarator (a pointer, say) returns something the table can't hold. An
   // error inside the declarator means the header itself is half-typed; one inside the body doesn't matter.
   if (!type || declarator?.type !== "function_declarator" || declarator.hasError) return undefined;
+  // A qualified name (`geo::f`, `Foo::bar`) is an out-of-line definition: a class method can't be
+  // told from a namespace function here, so neither exports.
   const nameNode = declarator.childForFieldName("declarator");
   if (nameNode?.type !== "identifier" || nameNode.text === "main") return undefined;
-  const returns = kindOf(type);
+  // `auto f() -> int`: the type is the placeholder, the real one trails the declarator.
+  const returns = kindOf(type.type === "placeholder_type_specifier" ? trailingReturnType(declarator) : type);
   const params = parameters(declarator.childForFieldName("parameters"));
   if (!returns || !params) return undefined;
   return {
     name: nameNode.text,
     nameStart: nameNode.startIndex,
-    callee: nameNode.text,
+    callee: [...namespaces, nameNode.text].join("::"),
     params,
     returnType: returns.type,
     returns: returns.kind,
@@ -50,8 +63,13 @@ function definition(node: Node, source: string): NativeFunction | undefined {
   };
 }
 
+function trailingReturnType(declarator: Node): Node | undefined {
+  return declarator.namedChildren.find((child) => child.type === "trailing_return_type")?.namedChildren[0];
+}
+
 /** The type's spelling with its whitespace normalized, and how it crosses; undefined when the table doesn't know it. */
-function kindOf(typeNode: Node): { type: string; kind: Kind } | undefined {
+function kindOf(typeNode: Node | null | undefined): { type: string; kind: Kind } | undefined {
+  if (!typeNode) return undefined;
   const type = oneLine(typeNode.text);
   const kind = C_TYPES[type];
   return kind && { type, kind };
@@ -65,8 +83,9 @@ function parameters(list: Node | null): Param[] | undefined {
   if (declarations.length === 1 && only!.type === "parameter_declaration" && !only!.childForFieldName("declarator") && only!.childForFieldName("type")?.text === "void") return [];
   const params: Param[] = [];
   for (const [index, declaration] of declarations.entries()) {
-    // Anything else is `...`.
-    if (declaration.type !== "parameter_declaration") return undefined;
+    // A default argument (`optional_parameter_declaration`) is still a required parameter: the glue
+    // always passes every argument. Anything else is `...`.
+    if (declaration.type !== "parameter_declaration" && declaration.type !== "optional_parameter_declaration") return undefined;
     const type = declaration.childForFieldName("type");
     const resolved = type && kindOf(type);
     if (!resolved || resolved.kind.ts === "void") return undefined;
