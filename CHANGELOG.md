@@ -1,8 +1,12 @@
 # Changelog
 
+A section per package. The next version's entries go under `### x.y.z (unreleased)` in both
+sections; `npm run release` dates the headings, and the Release workflow makes them the GitHub
+release notes ([docs/releasing.md](docs/releasing.md)).
+
 ## ts-polyglot
 
-### 0.1.0 (unreleased)
+### 0.1.0 (2026-10-23)
 
 First release.
 
@@ -21,12 +25,14 @@ First release.
 
 ## create-ts-polyglot
 
-### 0.1.0 (unreleased)
+### 0.1.0 (2026-10-23)
 
 First release.
 
 - `npm create ts-polyglot` writes a project with a C, a C++ and a Rust file imported from
   `main.ts`, the `contentMappers` entry in tsconfig.json, `typecheck` and `start` scripts, and
-  optionally the VS Code settings, extension recommendation and F5 debug configuration.
+  optionally the VS Code settings, extension recommendations and the F5 configurations for the OS:
+  TypeScript and native code debugged together (the default on Windows; written but not yet tried
+  on Linux and macOS).
 - Installs with the package manager that ran it, checks for the compilers and reports what's
   missing.

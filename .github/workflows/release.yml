@@ -1,0 +1,68 @@
+# Publishes both packages to npm and creates the GitHub release when a `v*` tag is pushed. The tag
+# comes from `npm run release -- <version>`, which bumps the versions and dates the changelog
+# (docs/releasing.md). npm trusts this workflow by filename (trusted publishing), so renaming the
+# file means reconfiguring both packages on npmjs.com.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# A re-run after a failure queues behind a running release instead of racing it.
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  # The whole matrix again, on exactly this commit: nothing is published that CI hasn't passed.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # npm exchanges the OIDC token for a short-lived publish token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # Node 22 ships npm 10; trusted publishing needs 11.5.1 or later.
+      - run: npm install -g npm@latest && npm --version
+      - run: npm ci
+      - name: Check the tag against the versions and the changelog
+        id: release
+        run: node scripts/release.ts check "$GITHUB_REF_NAME" | tee -a "$GITHUB_OUTPUT"
+      # Both packages, ts-polyglot first: the scaffold's template asks for ^this version of it, and a
+      # version is installable seconds after it's published. A version the registry already has is
+      # skipped, so a failed run can be re-run to the end. prepack builds dist/.
+      - name: Publish to npm
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          NPM_TAG: ${{ steps.release.outputs.npm_tag }}
+        run: |
+          for package in ts-polyglot create-ts-polyglot; do
+            if npm view "$package@$VERSION" version 2> /dev/null; then
+              echo "$package@$VERSION is already published"
+            else
+              npm publish --workspace "$package" --tag "$NPM_TAG"
+            fi
+          done
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "release exists"
+            exit 0
+          fi
+          node scripts/release.ts notes "$VERSION" > "$RUNNER_TEMP/notes.md"
+          if [ "$PRERELEASE" = true ]; then flags=(--prerelease); else flags=(); fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"

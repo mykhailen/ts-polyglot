@@ -3,7 +3,7 @@
 // rather than blocks, and takes `run` and `exists` as options so the tests need no compiler.
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { win32 } from "node:path";
+import { posix, win32 } from "node:path";
 
 export interface ToolCheck {
   tool: string;
@@ -47,6 +47,23 @@ export function checkToolchain(options: ToolcheckOptions = {}): ToolCheck[] {
   }
   checks.push({ tool: "Rust", found: run("rustc", ["--version"]) !== undefined, hint: RUST_HINT });
   return checks;
+}
+
+export interface FindNodeOptions {
+  execPath?: string;
+  platform?: NodeJS.Platform;
+  run?: ToolcheckOptions["run"];
+}
+
+/**
+ * The node for the native debugger to launch, by full path: the one running the scaffold, unless
+ * that's bun or deno, which can't run the hook; then the first node on PATH.
+ */
+export function findNode(options: FindNodeOptions = {}): string {
+  const { execPath = process.execPath, platform = process.platform, run = runQuietly } = options;
+  if (/^node(\.exe)?$/i.test((platform === "win32" ? win32 : posix).basename(execPath))) return execPath;
+  const found = run(platform === "win32" ? "where.exe" : "which", ["node"])?.split(/\r?\n/)[0]?.trim();
+  return found || execPath;
 }
 
 function nodeAtLeast(version: string, major: number, minor: number): boolean {

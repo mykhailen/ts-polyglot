@@ -18,10 +18,11 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run build && npm run typecheck --workspaces --if-present",
-    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run build && tsc -p . && npm run typecheck --workspaces --if-present",
+    "test": "node --test \"scripts/*.test.ts\" && npm test --workspaces --if-present",
     "test:linux": "node scripts/linux.cjs",
-    "example": "npm run build && npm start -w native-demo"
+    "example": "npm run build && npm start -w native-demo",
+    "release": "node scripts/release.ts prepare"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

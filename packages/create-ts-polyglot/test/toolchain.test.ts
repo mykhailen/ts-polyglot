@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { checkToolchain, type ToolcheckOptions } from "../src/toolchain.ts";
+import { checkToolchain, findNode, type ToolcheckOptions } from "../src/toolchain.ts";
 
 const none: ToolcheckOptions = { platform: "linux", env: {}, nodeVersion: "v22.21.0", exists: () => false, run: () => undefined };
 const byName = (checks: ReturnType<typeof checkToolchain>) => Object.fromEntries(checks.map((c) => [c.tool, c]));
@@ -56,6 +56,25 @@ test("without ProgramFiles(x86) in the environment, vswhere is looked for under 
   const looked: string[] = [];
   checkToolchain({ ...none, platform: "win32", exists: (path) => (looked.push(path), false) });
   assert.deepEqual(looked, ["C:\\Program Files (x86)\\Microsoft Visual Studio\\Installer\\vswhere.exe"]);
+});
+
+test("the native debugger launches the node that runs the scaffold", () => {
+  const asked: string[] = [];
+  const run = (command: string) => (asked.push(command), undefined);
+  assert.equal(findNode({ execPath: "C:\\nvm4w\\nodejs\\node.exe", platform: "win32", run }), "C:\\nvm4w\\nodejs\\node.exe");
+  assert.equal(findNode({ execPath: "/usr/local/bin/node", platform: "linux", run }), "/usr/local/bin/node");
+  assert.deepEqual(asked, []);
+});
+
+test("when bun runs the scaffold, the debugger gets the node on PATH instead", () => {
+  const asked: string[][] = [];
+  const run = (command: string, args: string[]) => (asked.push([command, ...args]), "/home/me/.nvm/versions/node/v22.21.0/bin/node\n");
+  assert.equal(findNode({ execPath: "/home/me/.bun/bin/bun", platform: "linux", run }), "/home/me/.nvm/versions/node/v22.21.0/bin/node");
+  assert.deepEqual(asked, [["which", "node"]]);
+  // where.exe lists every match; the first is the one the shell would run.
+  assert.equal(findNode({ execPath: "C:\\Users\\me\\.bun\\bin\\bun.exe", platform: "win32", run: () => "C:\\nvm4w\\nodejs\\node.exe\r\nC:\\other\\node.exe\r\n" }), "C:\\nvm4w\\nodejs\\node.exe");
+  // Without node on PATH, the launch configuration still gets a path, to fix by hand.
+  assert.equal(findNode({ execPath: "/home/me/.bun/bin/bun", platform: "linux", run: () => undefined }), "/home/me/.bun/bin/bun");
 });
 
 test("Node must be 22.18 or newer, for type stripping", () => {

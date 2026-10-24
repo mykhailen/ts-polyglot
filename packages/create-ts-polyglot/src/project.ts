@@ -11,18 +11,30 @@ export interface ProjectOptions {
   /** The npm package name, which also titles the README. */
   name: string;
   ide: Ide;
+  /** The OS the project is created on: its launch.json gets that OS's native debugger. */
+  platform?: NodeJS.Platform;
+  /** The node the native debugger launches, by full path. */
+  node?: string;
 }
 
 export const templateDir = fileURLToPath(new URL("../template/", import.meta.url));
 
 /** The files to write, by path relative to the project root, with forward slashes. */
-export function planProject({ name, ide }: ProjectOptions): Map<string, string> {
+export function planProject({ name, ide, platform = process.platform, node = process.execPath }: ProjectOptions): Map<string, string> {
+  // One launch file per OS, named as VS Code names them: the native debugger differs (cppvsdbg on
+  // Windows, gdb or lldb through cppdbg elsewhere), and a configuration's type can't vary by OS.
+  const launch = `.vscode/launch.${platform === "win32" ? "windows" : platform === "darwin" ? "osx" : "linux"}.json`;
   const files = new Map<string, string>();
   for (const entry of readdirSync(templateDir, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const source = join(entry.parentPath, entry.name);
     const path = relative(templateDir, source).split(sep).join("/");
     if (path.startsWith(".vscode/") && ide !== "vscode") continue;
+    if (path.startsWith(".vscode/launch.")) {
+      // The native debugger launches node by full path, so the scaffold fills in the one it knows.
+      if (path === launch) files.set(".vscode/launch.json", readFileSync(source, "utf8").replaceAll("__NODE__", JSON.stringify(node).slice(1, -1)));
+      continue;
+    }
     // npm leaves .gitignore out of every tarball, so the template carries it under another name.
     files.set(path === "_gitignore" ? ".gitignore" : path, readFileSync(source, "utf8"));
   }

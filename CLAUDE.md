@@ -6,7 +6,8 @@ It's an npm workspaces monorepo under the MIT license. It started as a proof of 
 was moved here on 2026-10-22.
 It builds with MSVC on Windows and with gcc or clang on Linux, and both are tested. The macOS recipe
 is written but has never run: there's no Mac here, so only CI exercises it. `npm test` runs unit
-tests and end-to-end tests that use the real compilers.
+tests and end-to-end tests that use the real compilers. Both packages are on npm (0.1.0 since
+2026-10-23); a release is `npm run release`, a tag, and the Release workflow (docs/releasing.md).
 
 Two halves share one signature parser:
 
@@ -38,9 +39,11 @@ setup), none of which is written down anywhere else.
 | `packages/ts-polyglot/test/` | `node:test` suites: unit tests import `src/`; `e2e.test.ts` runs the real `tsc` and `node` (so `dist/`) over the projects in `test/fixtures/`; `pack.test.ts` installs the packed tarball outside the repo, as a user would |
 | `packages/ts-polyglot/dist/` | what actually runs: JavaScript and source maps from `tsconfig.build.json`, which `exports` and the mapper's `exec` point at (git-ignored) |
 | `examples/native-demo/` | a consumer project: `add.cpp`, `geometry.c`, `numbers.rs`, `main.ts` |
-| `packages/create-ts-polyglot/` | `npm create ts-polyglot`. `src/cli.ts` asks with `@clack/prompts` (directory, editor, install) and writes `template/`, which is a working project itself: `_gitignore` becomes `.gitignore` (npm leaves that name out of tarballs), `README.md` has `__NAME__` and a `<!-- vscode -->` section. `src/toolchain.ts` mirrors how ts-polyglot finds the compilers and only reports. `test/e2e.test.ts` runs the built CLI, installs ts-polyglot from a packed tarball into the result, type-checks and runs it |
+| `packages/create-ts-polyglot/` | `npm create ts-polyglot`. `src/cli.ts` asks with `@clack/prompts` (directory, editor, install) and writes `template/`, which is a working project itself: `_gitignore` becomes `.gitignore` (npm leaves that name out of tarballs), `README.md` has `__NAME__` and a `<!-- vscode -->` section, and `.vscode/launch.{windows,linux,osx}.json` are one `launch.json` per OS (the native debugger's type can't vary by OS), with `__NODE__` for the node the native half launches. Only Windows's compound has been run; it's F5 there, second in the dropdown elsewhere. `src/toolchain.ts` mirrors how ts-polyglot finds the compilers and only reports, and finds the node for the debugger. `test/e2e.test.ts` runs the built CLI, installs ts-polyglot from a packed tarball into the result, type-checks and runs it |
 | `scripts/lsp-probe.cjs` | drives `tsc --lsp` like VS Code against the example, to check editor behavior without an editor |
-| `.github/workflows/ci.yml` | GitHub Actions: `npm ci`, typecheck, test and example on Windows, Linux (x64, arm64) and macOS (arm64, x64). Runs on every push to the GitHub repo, `mykhailen/ts-polyglot` |
+| `.github/workflows/ci.yml` | GitHub Actions: `npm ci`, typecheck, test and example on Windows, Linux (x64, arm64) and macOS (arm64, x64). Runs on every branch push and pull request to the GitHub repo, `mykhailen/ts-polyglot`; tags go through `release.yml`, which calls it |
+| `.github/workflows/release.yml` | a `v*` tag: runs `ci.yml` (`workflow_call`), then publishes `ts-polyglot` and `create-ts-polyglot` with npm trusted publishing (OIDC, no token) and creates the GitHub release. npm trusts it by filename |
+| `scripts/release.ts` | `npm run release`: moves both packages and the template to one version, dates `CHANGELOG.md`, tests, commits and tags. Its `check` and `notes` run in `release.yml`. `release.test.ts` covers the pure parts, and the root `tsconfig.json` type-checks `scripts/*.ts` |
 | `scripts/linux.cjs`, `scripts/linux.Dockerfile` | `npm run test:linux`: copies the repo into a Node 22 container with gcc, clang and Rust, and runs the checks there |
 
 ## Commands
@@ -53,7 +56,8 @@ npm test                       # build, then unit tests and end-to-end tests wit
 npm run test:linux             # npm ci, typecheck, test, example and the probe in a Linux container (needs Docker Desktop running)
 npm run example                # build, then run the example; addons build on first import (about 3 s cold)
 node scripts/lsp-probe.cjs     # hover, definition, references, rename and live-edit results from the language server
-node packages/create-ts-polyglot/dist/cli.js my-app --no-install   # the scaffold, before it's on npm; `npm install <tarball>` in the result, as e2e.test.ts does
+node packages/create-ts-polyglot/dist/cli.js my-app --no-install   # the scaffold from this checkout; `npm install <tarball>` in the result, as e2e.test.ts does
+npm run release -- 0.2.0       # or patch|minor|major: the release commit and tag; `git push origin main v0.2.0` then publishes (docs/releasing.md)
 ```
 
 - The LSP probe and the editor run whatever is in `dist/`. After editing `src/`, build (`typecheck`
@@ -104,7 +108,15 @@ them unbound.
   its own tarball listing the same way.
 - **The template's versions are pinned by test.** `create-ts-polyglot/template/package.json` has
   `ts-polyglot` at `^<the workspace version>` and the repo's TypeScript; `project.test.ts` fails when
-  either drifts, so bump them with the package.
+  either drifts. `npm run release` bumps `ts-polyglot` there with the packages; TypeScript is bumped
+  by hand.
+- **One version for both packages.** A tag `vX.Y.Z` publishes both. `scripts/release.ts` keeps the
+  two package.json files, the template and the lockfile's workspace entries in step, and its `check`
+  refuses a tag that doesn't match them.
+- **`CHANGELOG.md` has a `## <package>` section each.** The next version's entries go under
+  `### x.y.z (unreleased)` in both; the release dates them, and they become the GitHub release notes.
+- **`release.yml` is configuration on npmjs.com.** The trusted publishers of both packages name the
+  workflow file and the repository. Renaming either, or changing `repository.url`, stops publishing.
 - **Keep `src/` runnable by Node's type stripping** anyway, so tests and scripts can import it
   without a build: `erasableSyntaxOnly` (no `enum`, `namespace` or parameter properties; use
   `as const` objects), `.ts` extensions on relative imports (the build rewrites them), and
@@ -131,11 +143,12 @@ them unbound.
    `bigint` for 64-bit values.
 4. **More toolchains:** MinGW gcc and clang-cl on Windows (they need a per-OS `compiler` setting,
    because one committed value would mean different things on different OSes), and Windows on arm64.
-5. **Publishing:** `npm login`, then `ts-polyglot` first and `create-ts-polyglot` second: the
-   template depends on the published `ts-polyglot`, and `npm create ts-polyglot` resolves
-   `create-ts-polyglot` from the registry. Until then, the only way to try the scaffold is the
-   command above. Date the `(unreleased)` entries in `CHANGELOG.md` at each release. Later, possibly
-   prebuilt binaries.
+5. **Releasing.** Both packages have been on npm since 2026-10-23 (0.1.0, published by hand).
+   Releases go through `npm run release`, `git push origin main vX.Y.Z` and the Release workflow
+   (docs/releasing.md). Before the next one, the owner configures the trusted publishers on
+   npmjs.com for both packages (workflow `release.yml`, allow `npm publish`); a new configuration
+   expires after 2 days without a publish, so do it right before releasing. After the first CI
+   publish: require 2FA and disallow tokens. Later, possibly prebuilt binaries.
 6. **Parser gaps:**
    - `extern "C" { }` blocks and namespaces aren't scanned;
    - only the first of a set of overloads is kept;

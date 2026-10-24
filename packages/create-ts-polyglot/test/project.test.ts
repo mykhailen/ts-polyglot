@@ -44,17 +44,69 @@ test("tsconfig.json hands .c, .cpp and .rs files to ts-polyglot", () => {
   assert.deepEqual(tsconfig.contentMappers, [{ package: "ts-polyglot", extensions: [".c", ".cpp", ".rs"] }]);
 });
 
-test("VS Code gets the TypeScript 7 settings, the extension recommendation and an F5 configuration", () => {
+test("VS Code gets the TypeScript 7 settings and the extension recommendations", () => {
   const files = planProject({ name: "x", ide: "vscode" });
   const settings = JSON.parse(files.get(".vscode/settings.json")!);
   assert.equal(settings["js/ts.experimental.useTsgo"], true);
   assert.equal(settings["js/ts.tsdk.path"], "./node_modules/typescript");
   const extensions = JSON.parse(files.get(".vscode/extensions.json")!);
   assert.ok(extensions.recommendations.includes("TypeScriptTeam.native-preview"));
-  const [config] = parseJsonc(files.get(".vscode/launch.json")!).configurations;
-  assert.equal(config.request, "launch");
-  assert.match(config.program, /main\.ts$/);
-  assert.deepEqual(config.runtimeArgs, ["--import", "ts-polyglot/register"]);
+  // The native half of the debug compound is the C/C++ extension's, on every OS.
+  assert.ok(extensions.recommendations.includes("ms-vscode.cpptools"));
+});
+
+const launchFor = (platform: NodeJS.Platform, node = "/usr/local/bin/node") => parseJsonc(planProject({ name: "x", ide: "vscode", platform, node }).get(".vscode/launch.json")!);
+const entry = (launch: any, name: string) => [...launch.configurations, ...launch.compounds].find((c: any) => c.name === name);
+
+test("launch.json debugs main.ts alone, and TypeScript and native code together", () => {
+  const launch = launchFor("linux");
+  const main = entry(launch, "Debug main.ts");
+  assert.equal(main.request, "launch");
+  assert.match(main.program, /main\.ts$/);
+  assert.deepEqual(main.runtimeArgs, ["--import", "ts-polyglot/register"]);
+  const compound = entry(launch, "Debug TypeScript + native");
+  assert.deepEqual(compound.configurations, ["native half", "TypeScript half"]);
+  assert.equal(compound.stopAll, true);
+  const native = entry(launch, "native half");
+  assert.deepEqual(native.args, ["--inspect-brk=9229", "--import", "ts-polyglot/register", "main.ts"]);
+  assert.deepEqual(native.environment, [{ name: "TS_POLYGLOT_DEBUG", value: "1" }]);
+  const ts = entry(launch, "TypeScript half");
+  assert.equal(ts.request, "attach");
+  assert.equal(ts.port, 9229);
+  assert.equal(ts.continueOnAttach, true);
+});
+
+test("the native debugger is the OS's, launching the node that ran the scaffold", () => {
+  const windows = entry(launchFor("win32", "C:\\nvm4w\\nodejs\\node.exe"), "native half");
+  assert.equal(windows.type, "cppvsdbg");
+  assert.equal(windows.program, "C:\\nvm4w\\nodejs\\node.exe");
+  const linux = entry(launchFor("linux"), "native half");
+  assert.equal(linux.type, "cppdbg");
+  assert.equal(linux.MIMode, "gdb");
+  assert.equal(linux.program, "/usr/local/bin/node");
+  const mac = entry(launchFor("darwin"), "native half");
+  assert.equal(mac.type, "cppdbg");
+  assert.equal(mac.MIMode, "lldb");
+  for (const platform of ["win32", "linux", "darwin"] as const) {
+    const files = planProject({ name: "x", ide: "vscode", platform });
+    assert.ok(!files.get(".vscode/launch.json")!.includes("__NODE__"), platform);
+    // Only the OS's launch file is written, under the name VS Code reads.
+    assert.deepEqual([...files.keys()].filter((name) => name.startsWith(".vscode/launch")), [".vscode/launch.json"]);
+  }
+});
+
+test("F5 defaults to the compound on Windows, where it has been tried, and to main.ts elsewhere", () => {
+  // VS Code selects the first visible entry, sorting configurations and compounds together by
+  // presentation.order, so every entry carries one.
+  const order = (launch: any, name: string) => entry(launch, name).presentation.order;
+  const windows = launchFor("win32");
+  assert.ok(order(windows, "Debug TypeScript + native") < order(windows, "Debug main.ts"));
+  for (const platform of ["linux", "darwin"] as const) {
+    const launch = launchFor(platform);
+    assert.ok(order(launch, "Debug main.ts") < order(launch, "Debug TypeScript + native"), platform);
+  }
+  // The halves only make sense inside the compound, so the dropdown doesn't list them.
+  for (const name of ["native half", "TypeScript half"]) assert.equal(entry(windows, name).presentation.hidden, true, name);
 });
 
 test("without an editor, no editor files", () => {

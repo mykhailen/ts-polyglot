@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // main.ts alone, under the JavaScript debugger: the native functions run compiled, as with
+      // `npm start`. Breakpoints in .c, .cpp and .rs files need the compound below.
+      "name": "Debug main.ts",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/main.ts",
+      "runtimeArgs": ["--import", "ts-polyglot/register"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "order": 2 }
+    },
+    {
+      // Native half of "Debug TypeScript + native": node under the Visual Studio C++ debugger (the
+      // C/C++ extension), paused for the TypeScript debugger (--inspect-brk), with the addons built
+      // unoptimized and with .pdb files (TS_POLYGLOT_DEBUG=1). The program is the node that ran
+      // `npm create`; point it elsewhere if you switch Node versions.
+      "name": "native half",
+      "type": "cppvsdbg",
+      "request": "launch",
+      "program": "__NODE__",
+      "args": ["--inspect-brk=9229", "--import", "ts-polyglot/register", "main.ts"],
+      "cwd": "${workspaceFolder}",
+      "environment": [{ "name": "TS_POLYGLOT_DEBUG", "value": "1" }],
+      "console": "integratedTerminal",
+      "presentation": { "hidden": true }
+    },
+    {
+      // TypeScript half: attaches to that node, sets breakpoints and lets it run.
+      "name": "TypeScript half",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "continueOnAttach": true,
+      "skipFiles": ["<node_internals>/**"],
+      "presentation": { "hidden": true }
+    }
+  ],
+  "compounds": [
+    {
+      // F5: both debuggers on one node. Stop in main.ts, step over a call (F10), and a breakpoint in
+      // the C, C++ or Rust function stops there. Come back with F5 in the native session: the
+      // step-over completes on the next line of main.ts. (Step Out leads into the generated wrapper
+      // and then into V8, which has no symbols.)
+      "name": "Debug TypeScript + native",
+      "configurations": ["native half", "TypeScript half"],
+      "stopAll": true,
+      "presentation": { "order": 1 }
+    }
+  ]
+}

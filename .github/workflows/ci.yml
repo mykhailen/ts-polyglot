@@ -1,7 +1,12 @@
 # Type-checks, tests and runs the example on every OS ts-polyglot supports, with the real compilers.
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    # Branches only: a tag is released by release.yml, which calls this workflow for it.
+    branches: ["**"]
+  pull_request:
+  workflow_call:
 
 jobs:
   test:

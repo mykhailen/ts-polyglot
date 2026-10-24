@@ -1,0 +1,13 @@
+{
+  // Type-checks the TypeScript scripts, which Node runs as they are. Each package has its own tsconfig.
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true
+  },
+  "include": ["scripts/*.ts"]
+}

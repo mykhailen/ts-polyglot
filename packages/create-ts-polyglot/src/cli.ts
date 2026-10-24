@@ -8,7 +8,7 @@ import * as p from "@clack/prompts";
 import { HELP, parseArgs, type Args, type Ide } from "./args.ts";
 import { install, packageManager, runScriptCommand } from "./install.ts";
 import { isUsableDir, packageNameFor, planProject, writeProject } from "./project.ts";
-import { checkToolchain } from "./toolchain.ts";
+import { checkToolchain, findNode } from "./toolchain.ts";
 
 const DEFAULT_DIR = "ts-polyglot-app";
 const NOT_EMPTY = (dir: string) => `${dir} exists and is not empty`;
@@ -55,7 +55,7 @@ async function main(): Promise<number> {
         message: "Editor",
         initialValue: "vscode",
         options: [
-          { value: "vscode", label: "VS Code", hint: "settings, the TypeScript 7 extension recommendation and F5 debugging" },
+          { value: "vscode", label: "VS Code", hint: "settings, extension recommendations and F5 debugging" },
           { value: "none", label: "None", hint: "no editor files" },
         ],
       });
@@ -74,7 +74,7 @@ async function main(): Promise<number> {
     }
   }
 
-  const files = planProject({ name: packageNameFor(basename(target)), ide });
+  const files = planProject({ name: packageNameFor(basename(target)), ide, node: findNode() });
   writeProject(target, files);
   const shown = relative(process.cwd(), target) || ".";
   p.log.success(`Created ${shown} (${files.size} files)`);
@@ -108,10 +108,12 @@ async function main(): Promise<number> {
     // Lines under 70 characters: the note wraps at the terminal width, and a wrapped line reads as
     // two steps.
     steps.push("In VS Code: open the folder and trust it.");
-    steps.push("Install the recommended extension, TypeScript (Native Preview).");
+    steps.push("Install the recommended extensions, TypeScript (Native Preview)");
+    steps.push("and C/C++.");
     steps.push('Run "TypeScript: Select TypeScript Version…" from the command palette');
     steps.push('and pick "Use Workspace Version" (once per folder).');
-    steps.push("Press F5 to debug main.ts.");
+    if (process.platform === "win32") steps.push("Press F5 to debug main.ts and the native code together.");
+    else steps.push("Press F5 to debug main.ts. The dropdown also has", '"Debug TypeScript + native", not yet tried on this OS.');
   }
   p.note(steps.join("\n"), "Next steps");
   p.outro("Done.");

@@ -15,8 +15,11 @@ It asks for a project directory, an editor, and whether to install, then writes:
 - `tsconfig.json` with the `contentMappers` entry that hands `.c`, `.cpp` and `.rs` files to
   ts-polyglot;
 - for VS Code: `.vscode/settings.json` (the TypeScript 7 extension on the workspace TypeScript),
-  `extensions.json` (recommends **TypeScript (Native Preview)**, so VS Code offers to install it)
-  and `launch.json` (F5 debugs `main.ts`);
+  `extensions.json` (recommends **TypeScript (Native Preview)** and **C/C++**, so VS Code offers to
+  install them) and `launch.json` for the OS it runs on: F5 debugs `main.ts` and the native code in
+  one session, with the Visual Studio debugger on Windows and gdb or lldb elsewhere (not yet tried
+  there, so there F5 debugs `main.ts` alone and that configuration waits in the dropdown). The
+  native debugger launches node by full path: the one that ran `create`;
 - a README with the same instructions.
 
 Then it installs the dependencies, checks for the compilers ts-polyglot needs, and prints what's

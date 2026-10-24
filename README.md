@@ -137,6 +137,7 @@ TypeScript is 7.0, which has no content mappers.
 | [packages/create-ts-polyglot](packages/create-ts-polyglot/README.md) | `npm create ts-polyglot`: a new project with the demo files, the editor setup and F5 debugging |
 | [examples/native-demo](examples/native-demo) | C, C++ and Rust files imported from `main.ts` |
 | [docs/content-mappers.md](docs/content-mappers.md) | notes on the content mapper protocol and editor support |
+| [docs/releasing.md](docs/releasing.md) | how a release is cut: one command, one tag, and the Release workflow publishing both packages |
 
 To work on it:
 
@@ -148,7 +149,9 @@ npm run example     # builds the addons on first import, then runs the example
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the type check, the tests and the
-example on Windows, Linux (x64 and arm64) and macOS (arm64 and x64) on every push.
+example on Windows, Linux (x64 and arm64) and macOS (arm64 and x64) on every push. A `v*` tag runs
+[release.yml](.github/workflows/release.yml), which publishes both packages to npm and creates the
+GitHub release.
 
 ## License
 

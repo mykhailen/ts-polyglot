@@ -31,13 +31,18 @@ Later runs use the cache in `node_modules/.cache/ts-polyglot`.
 <!-- vscode -->
 ## VS Code
 
-Open the folder and trust it. VS Code offers to install the recommended extension, **TypeScript
-(Native Preview)**, which is TypeScript 7. Then run **TypeScript: Select TypeScript Version…** from
-the command palette and pick **Use Workspace Version**: the extension's own TypeScript is 7.0 and
-can't type native files; the 7.1 beta in `node_modules` can. That's a one-time choice per folder.
-After it, hover, go-to-definition, references and rename work across the language boundary.
+Open the folder and trust it. VS Code offers to install the recommended extensions: **TypeScript
+(Native Preview)**, which is TypeScript 7, and **C/C++**, which debugs the native code. Then run
+**TypeScript: Select TypeScript Version…** from the command palette and pick
+**Use Workspace Version**: the extension's own TypeScript is 7.0 and can't type native files; the
+7.1 beta in `node_modules` can. That's a one-time choice per folder. After it, hover,
+go-to-definition, references and rename work across the language boundary.
 
-Press **F5** to run `main.ts` under the debugger, with breakpoints in TypeScript.
+**F5** runs `main.ts` under both debuggers ("Debug TypeScript + native"): set a breakpoint in
+`add.cpp`, step over `add(1, 2)` in `main.ts` (F10), and you're in the C++. F5 there brings you back
+to the next line of `main.ts`. On Linux and macOS this configuration hasn't been tried yet, so F5
+runs "Debug main.ts" (TypeScript only) and the other waits in the dropdown. The native debugger
+launches the node that ran `npm create`; `.vscode/launch.json` says where to change that.
 <!-- /vscode -->
 
 ## Next
