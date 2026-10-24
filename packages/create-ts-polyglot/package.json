@@ -1,6 +1,6 @@
 {
   "name": "create-ts-polyglot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scaffold a TypeScript project that imports C, C++ and Rust files with ts-polyglot: npm create ts-polyglot",
   "license": "MIT",
   "author": "Evgen Mykhailenko",

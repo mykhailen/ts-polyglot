@@ -6,7 +6,7 @@ release notes ([docs/releasing.md](docs/releasing.md)).
 
 ## ts-polyglot
 
-### 0.2.0 (unreleased)
+### 0.2.0 (2026-10-23)
 
 - An import of a native file now resolves to a generated module in the addon cache, instead of the
   generated JavaScript being loaded under the native file's URL. The JavaScript debugger no longer
@@ -32,7 +32,7 @@ First release.
 
 ## create-ts-polyglot
 
-### 0.2.0 (unreleased)
+### 0.2.0 (2026-10-23)
 
 - F5 debugs `main.ts` and the native code in one session. `launch.json` is written for the OS the
   project is created on: the Visual Studio debugger on Windows, gdb or lldb through the C/C++
