@@ -6,10 +6,11 @@ import type { NativeFunction } from "../signatures.ts";
 import { c } from "./c.ts";
 import { cpp } from "./cpp.ts";
 import type { Language, LanguageModule } from "./language.ts";
+import { rust } from "./rust/index.ts";
 
 export type { Language, LanguageModule } from "./language.ts";
 
-export const languages: readonly LanguageModule[] = [c, cpp];
+export const languages: readonly LanguageModule[] = [c, cpp, rust];
 
 export function languageOf(fileName: string): Language | undefined {
   const dot = fileName.lastIndexOf(".");
