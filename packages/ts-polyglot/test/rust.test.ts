@@ -61,3 +61,11 @@ test("unknown types skip the function", () => {
 test("a half-typed file keeps the functions before the break", () => {
   assert.deepEqual(find("pub fn ok(x: i32) -> i32 { x }\npub fn half(a: i32,").map((f) => f.name), ["ok"]);
 });
+
+// rustfmt's layout for a long parameter list puts a comment after each parameter.
+test("comments between parameters don't hide the function", () => {
+  const source = "pub fn configure(\n    width: u32,  // pixels\n    height: u32, // pixels\n) -> bool {\n    width > 0 && height > 0\n}\n";
+  const [fn] = find(source);
+  assert.deepEqual(fn?.params.map((p) => p.name), ["width", "height"]);
+  assert.equal(fn?.signature, "pub fn configure(width: u32, height: u32,) -> bool");
+});

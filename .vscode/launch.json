@@ -37,7 +37,7 @@
     },
     {
       // Type-checks the example under the debugger. tsc.exe starts the content mapper and the
-      // debugger follows it there, so breakpoints in mapper.ts, declarations.ts and signatures.ts
+      // debugger follows it there, so breakpoints in mapper.ts, declarations.ts and src/languages/*
       // hit. TS_CONTENT_MAPPER_DEBUG prints every JSON-RPC message, virtual text included.
       // tsc gives `initialize` 5 seconds; `transform` may stay paused as long as you like.
       // The mapper runs from dist/, so the build runs first; breakpoints bind through source maps.

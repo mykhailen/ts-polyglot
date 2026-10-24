@@ -30,6 +30,19 @@ test("verbatim spans hold for namespaced C++ and nested Rust", () => {
   checkVerbatim("m.rs", "pub mod inner {\n    pub fn nested(mut x: i32) -> i32 { x }\n}\n");
 });
 
+// A `*/` from the native file would close the JSDoc early and break tsc's parse of the whole virtual
+// file, with errors that point nowhere in the user's code.
+test("comments inside a header stay out of the JSDoc", () => {
+  const c = toDeclarations("c.c", "int add(int a, int b /* the second */) { return a + b; }\n").text;
+  assert.equal(c.split("*/").length, 2, c);
+  assert.match(c, /`int add\(int a, int b\)` from c\.c/);
+  const cpp = toDeclarations("c.cpp", "int add(int a, // first\n        int b) { return a + b; }\n").text;
+  assert.match(cpp, /`int add\(int a, int b\)` from c\.cpp/);
+  const rs = toDeclarations("r.rs", "pub fn f(a: i32) /* ret */ -> i32 { a }\n").text;
+  assert.equal(rs.split("*/").length, 2, rs);
+  assert.match(rs, /`pub fn f\(a: i32\) -> i32` from r\.rs/);
+});
+
 test("a file without functions exports nothing", () => {
   assert.equal(toDeclarations("empty.c", "").text, "export {};\n");
   assert.equal(toDeclarations("comments.rs", "// nothing here\n/* or here */\n").text, "export {};\n");

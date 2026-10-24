@@ -94,6 +94,12 @@ test("offsets are string indices with CRLF line endings", () => {
   assert.equal(fn?.signature, "int add(int a, int b)");
 });
 
+test("comments inside the header are dropped from the signature", () => {
+  const [fn] = find("int add(int a /* in */, int b) { return a + b; }");
+  assert.deepEqual(fn?.params.map((p) => p.name), ["a", "b"]);
+  assert.equal(fn?.signature, "int add(int a, int b)");
+});
+
 test("a BOM doesn't hide the first function or shift offsets", () => {
   const source = "﻿int add(int a) { return a; }\n";
   const [fn] = find(source);

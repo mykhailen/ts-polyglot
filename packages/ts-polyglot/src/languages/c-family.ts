@@ -4,6 +4,7 @@
 // names are the grammars' (src/node-types.json at the pinned tags).
 import type { Node } from "web-tree-sitter";
 
+import { headerText } from "../parser.ts";
 import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../signatures.ts";
 
 // `long` is 32-bit on Windows but 64-bit on Linux and macOS, so it crosses as 64-bit everywhere and
@@ -71,7 +72,7 @@ function definition(node: Node, namespaces: readonly string[], source: string): 
     params,
     returnType: returns.type,
     returns: returns.kind,
-    signature: oneLine(source.slice(type.startIndex, declarator.endIndex)),
+    signature: headerText(source, type.startIndex, declarator.endIndex, node, ["comment"]),
   };
 }
 

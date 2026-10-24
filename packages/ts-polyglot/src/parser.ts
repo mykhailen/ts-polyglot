@@ -4,7 +4,9 @@
 // while the mapper loads one the first time a file of that language arrives. Parsers live for the
 // process; trees are the caller's to delete.
 import { readFile } from "node:fs/promises";
-import { Language, Parser, type Tree } from "web-tree-sitter";
+import { Language, Parser, type Node, type Tree } from "web-tree-sitter";
+
+import { oneLine } from "./signatures.ts";
 
 // Resolved from this module, so the same path works from src/ under type stripping and from dist/.
 const grammars = new URL("../grammars/", import.meta.url);
@@ -37,6 +39,20 @@ async function load(file: string): Promise<void> {
   const parser = new Parser();
   parser.setLanguage(language);
   parsers.set(file, parser);
+}
+
+/**
+ * `source` from `start` to `end` as one line, without the comments among `node`'s descendants
+ * (`commentTypes` names the grammar's comment nodes). A comment's closing delimiter would otherwise end
+ * the JSDoc the signature is quoted in and break tsc's parse of the whole virtual file.
+ */
+export function headerText(source: string, start: number, end: number, node: Node, commentTypes: string[]): string {
+  let text = source.slice(start, end);
+  const comments = node.descendantsOfType(commentTypes).filter((comment) => comment.startIndex >= start && comment.endIndex <= end);
+  // From the back, so the earlier offsets stay valid; a space keeps neighbors apart.
+  for (const comment of comments.reverse()) text = `${text.slice(0, comment.startIndex - start)} ${text.slice(comment.endIndex - start)}`;
+  // The gaps that comments and line breaks leave before `,` and `)` and after `(`.
+  return oneLine(text).replace(/\(\s+/g, "(").replace(/\s+([,)])/g, "$1");
 }
 
 /** Parses with a grammar loaded earlier. The caller must tree.delete(). Throws if the grammar isn't loaded. */

@@ -4,6 +4,7 @@
 // names are tree-sitter-rust's (src/node-types.json at the pinned tag).
 import type { Node } from "web-tree-sitter";
 
+import { headerText } from "../../parser.ts";
 import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
 
@@ -12,6 +13,9 @@ export const RUST_TYPES: Record<string, Kind> = {
 };
 
 export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", functions: rustFunctions };
+
+// tree-sitter-rust has two comment nodes where the C grammars have one.
+const COMMENTS = ["line_comment", "block_comment"];
 
 export function rustFunctions(root: Node, source: string): NativeFunction[] {
   const found: NativeFunction[] = [];
@@ -64,7 +68,7 @@ function item(node: Node, modules: readonly string[], source: string): NativeFun
     params,
     returnType: returns.type,
     returns: returns.kind,
-    signature: oneLine(source.slice(node.startIndex, body.startIndex)),
+    signature: headerText(source, node.startIndex, body.startIndex, node, COMMENTS),
   };
 }
 
@@ -77,7 +81,7 @@ function kindOf(typeNode: Node): { type: string; kind: Kind } | undefined {
 function parameters(list: Node): Param[] | undefined {
   const params: Param[] = [];
   for (const parameter of list.namedChildren) {
-    if (parameter.type === "comment") continue;
+    if (COMMENTS.includes(parameter.type)) continue;
     // `self`, `...` and parameter attributes have no place in the wrapper.
     if (parameter.type !== "parameter") return undefined;
     // `mut x` keeps `x` as the pattern, with the `mut` beside it; a tuple or struct pattern has no one name.

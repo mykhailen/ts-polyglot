@@ -35,7 +35,7 @@ setup), none of which is written down anywhere else.
 | `packages/ts-polyglot/src/declarations.ts` | the virtual TypeScript and span mappings returned by `transform` |
 | `packages/ts-polyglot/src/mapper.ts` | the content mapper process (JSON-RPC over stdio) |
 | `packages/ts-polyglot/src/protocol.ts` | the protocol types it uses |
-| `packages/ts-polyglot/src/build.ts` | Node-API glue generation, the Rust wrapper crate, the addon cache |
+| `packages/ts-polyglot/src/build.ts` | Node-API glue generation and the addon cache; the Rust wrapper crate and static library come from `languages/rust/build.ts` |
 | `packages/ts-polyglot/src/compiler.ts` | picks the compiler for a file: `CC`/`CXX`, the `"ts-polyglot"` field in package.json, or the platform default; spawns nothing |
 | `packages/ts-polyglot/src/toolchain.ts` | the build commands: MSVC (`vswhere`, `vcvars64.bat`, the Node-API import library) and gcc/clang on Linux and macOS |
 | `packages/ts-polyglot/src/register.ts` | loads every grammar (a top-level await, which `--import` waits for), then installs the synchronous Node resolve hook: an import of a native file resolves to the generated module in the cache |
@@ -133,7 +133,8 @@ them unbound.
 - **Adding a language:** `npm run grammars -- update <id> <tag> <owner/name>` pins its grammar; a
   module under `src/languages/` implements `LanguageModule` and joins `languages` in `index.ts`; a
   `test/<id>.test.ts` pins its walker. The build half (toolchain, glue) is still shared code in
-  `build.ts` and `toolchain.ts`, until the marshaling design says what a language provides there.
+  `build.ts` and `toolchain.ts`, with Rust's wrapper crate in `languages/rust/build.ts`, until the
+  marshaling design says what a language provides there.
 - **Mapper rules** (details in the docs):
   - Verbatim spans must be identical text on both sides.
   - `transform` diagnostics stop all type checking, so don't use them for "unsupported, skipped".
