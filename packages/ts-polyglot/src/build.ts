@@ -13,7 +13,8 @@ import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { resolveCompiler } from "./compiler.ts";
-import { findFunctions, languageOf, type NativeFunction } from "./signatures.ts";
+import { findFunctions, languageOf } from "./languages/index.ts";
+import type { NativeFunction } from "./signatures.ts";
 import { compileAddon, run, rustStaticLibName, rustTargetArgs } from "./toolchain.ts";
 
 // Bump to rebuild every cached addon after changing the generated code or the compiler flags.

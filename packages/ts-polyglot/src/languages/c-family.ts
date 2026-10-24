@@ -4,7 +4,19 @@
 // names are the grammars' (src/node-types.json at the pinned tags).
 import type { Node } from "web-tree-sitter";
 
-import { C_TYPES, oneLine, type Kind, type NativeFunction, type Param } from "../signatures.ts";
+import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../signatures.ts";
+
+// `long` is 32-bit on Windows but 64-bit on Linux and macOS, so it crosses as 64-bit everywhere and
+// every OS sees the same functions. `unsigned long` would need 64-bit unsigned values, which don't
+// cross yet.
+export const C_TYPES: Record<string, Kind> = {
+  int: I32, "signed int": I32, short: I32, int8_t: I32, int16_t: I32, int32_t: I32,
+  unsigned: U32, "unsigned int": U32, "unsigned short": U32, uint8_t: U32, uint16_t: U32, uint32_t: U32,
+  long: I64, "long long": I64, int64_t: I64,
+  float: F64, double: F64,
+  bool: BOOL, _Bool: BOOL,
+  void: VOID,
+};
 
 // Nodes whose children are declarations in their own right. Every branch of a preprocessor
 // conditional is walked, since nothing here can tell which one the compiler will take; the first

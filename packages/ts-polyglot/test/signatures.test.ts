@@ -1,8 +1,10 @@
 // The parser's type tables, which the mapper and the runtime share.
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { before } from "node:test";
 
-import { findFunctions } from "../src/signatures.ts";
+import { findFunctions, loadLanguage } from "../src/languages/index.ts";
+
+before(() => loadLanguage("c"));
 
 test("C long crosses as 64-bit on every OS", () => {
   const [fn] = findFunctions("long echo_long(long x) { return x; }", "c");

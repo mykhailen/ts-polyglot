@@ -3,7 +3,7 @@
 import { basename } from "node:path";
 
 import { SpanMapKind, type SpanMapping, type TransformResult } from "./protocol.ts";
-import { findFunctions, languageOf } from "./signatures.ts";
+import { findFunctions, languageOf } from "./languages/index.ts";
 
 export function toDeclarations(fileName: string, source: string): TransformResult {
   const language = languageOf(fileName);

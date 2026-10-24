@@ -6,7 +6,13 @@ import { registerHooks } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { buildAddon } from "./build.ts";
-import { languageOf } from "./signatures.ts";
+import { languageOf, languages, loadLanguage } from "./languages/index.ts";
+
+// Every grammar up front: `--import` waits for this module, and the hook below is synchronous, so it
+// can't load one when a native file first shows up. All three take about 25 ms (measured). The async
+// hooks API could load on demand, but it measured 84 to 113 ms of startup plus 0.6 ms on every import
+// in the program, for the worker thread it runs on.
+await Promise.all(languages.map((language) => loadLanguage(language.id)));
 
 registerHooks({
   // A resolve hook, not a load hook returning the generated JavaScript under the native file's

@@ -4,8 +4,12 @@
 // names are tree-sitter-rust's (src/node-types.json at the pinned tag).
 import type { Node } from "web-tree-sitter";
 
-import { RUST_TYPES, oneLine, type Kind, type NativeFunction, type Param } from "../../signatures.ts";
+import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
+
+export const RUST_TYPES: Record<string, Kind> = {
+  i8: I32, i16: I32, i32: I32, u8: U32, u16: U32, u32: U32, i64: I64, f32: F64, f64: F64, bool: BOOL, "()": VOID,
+};
 
 export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", functions: rustFunctions };
 
