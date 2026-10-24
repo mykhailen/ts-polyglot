@@ -124,4 +124,13 @@ The TypeScript 7 extension (`typescriptteam.native-preview`, 1.0.1 here) behaves
   launches `node --inspect-brk` with `TS_POLYGLOT_DEBUG=1`, which builds with `/Od` and `.pdb` files,
   and the JavaScript debugger attaches to the same process. There's no single F11 across the
   boundary; set a breakpoint in the native function instead. The `.pdb` files reference the real
-  source paths.
+  source paths. Coming back is F5, not Step Out: step over the call in `main.ts` (F10), let the
+  native breakpoint stop you, then continue in the native session and the TypeScript session stops
+  on the next line, its step-over complete. Step Out of the native function lands in the generated
+  wrapper (`glue.cpp` in the cache), which is its real caller; one more step leaves it for V8's
+  JIT-compiled code, which has no symbols, so the native session looks stuck there until F5.
+  Only the native debugger binds breakpoints in `.c`, `.cpp` and `.rs` files: the hook
+  resolves an import of `add.cpp` to `add_cpp.mjs` in the addon cache, so no JavaScript runs under
+  the native file's URL. (Measured with a load hook, which ran the glue as `add.cpp`: a breakpoint
+  on `add.cpp:3` bound to line 3 of the glue, stopped there on import, and VS Code opened the glue
+  as a second, read-only `add.cpp`.)

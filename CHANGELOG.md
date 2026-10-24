@@ -12,7 +12,9 @@ First release.
   TypeScript 7 editor extension. Hover, go-to-definition, references and rename reach into the
   native file.
 - Functions come from a Node hook, `node --import ts-polyglot/register`. Each file is compiled into
-  a Node-API addon on first import and cached by source hash.
+  a Node-API addon on first import and cached by source hash. The import resolves to a generated
+  module in the cache, so a JavaScript debugger leaves breakpoints in the native file to the native
+  debugger.
 - Compilers: MSVC on Windows x64; `cc`, gcc or clang on Linux and macOS, chosen with `CC`/`CXX` or
   the `"ts-polyglot"` field in package.json. Rust files need `rustc`. macOS support is written but
   not yet verified.

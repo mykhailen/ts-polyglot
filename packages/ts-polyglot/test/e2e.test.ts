@@ -37,7 +37,7 @@ function run(name: string, env: Record<string, string> = {}) {
 }
 
 test("tsc type-checks the fixtures without errors", () => {
-  for (const name of ["project", "clang"]) {
+  for (const name of ["project", "clang", "inspector"]) {
     const { status, errors, output } = typecheck(name);
     assert.deepEqual(errors, [], output);
     // Errors that aren't about a file, such as an unknown option, only show in the exit status.
@@ -62,6 +62,16 @@ test("a function the native file declares but never defines fails the import, ca
   const { status, stderr, output } = run("unresolved");
   assert.equal(status, 0, stderr);
   assert.match(output.error, /helper/);
+});
+
+// Otherwise a breakpoint set in add.cpp binds to the generated JavaScript and stops there on import,
+// instead of being left to the native debugger.
+test("a JavaScript debugger sees no script under a native file's URL", () => {
+  const { status, stderr, output } = run("inspector");
+  assert.equal(status, 0, stderr);
+  assert.equal(output.add, 5);
+  assert.ok(output.scripts.some((url: string) => url.endsWith("/main.ts")), `no scripts reported: ${JSON.stringify(output.scripts)}`);
+  assert.deepEqual(output.scripts.filter((url: string) => /\.(c|cpp|rs)$/.test(url)), []);
 });
 
 test("addons are built in TS_POLYGLOT_CACHE_DIR", () => {

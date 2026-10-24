@@ -65,7 +65,10 @@
   "compounds": [
     {
       // Both debuggers on one node.exe: stop in main.ts, then step over a call and a breakpoint in
-      // the C, C++ or Rust function stops there. There is no single F11 across the boundary.
+      // the C, C++ or Rust function stops there. There is no single F11 across the boundary, and
+      // the way back is F5 in the native session: the step-over then completes on the next line of
+      // main.ts. Step Out instead lands in the generated wrapper, the function's caller, and one
+      // more step leaves it for V8's code, which has no symbols.
       // The hook runs from dist/, so the build runs first.
       "name": "Example: TS + native",
       "configurations": ["Example: native half", "Example: TypeScript half"],

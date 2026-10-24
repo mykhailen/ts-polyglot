@@ -66,10 +66,11 @@ what those files export instead of trying to parse them as TypeScript.
   answers with `export declare function add(a: number, b: number): number;`, and maps the function
   and parameter names back to the C++ text so hover, rename and go-to-definition land in the native
   file. Nothing is compiled at type-check time.
-- **Runtime: a Node hook.** `node --import ts-polyglot/register` installs a load hook. When `add.cpp`
-  is imported, it generates Node-API glue around the file, builds it into a `.node` addon with the
-  platform's compiler (MSVC on Windows; `cc`, gcc or clang on Linux and macOS) and exports its
-  functions. A Rust file is first built into a static library with `rustc`, which the same glue links.
+- **Runtime: a Node hook.** `node --import ts-polyglot/register` installs a resolve hook. When
+  `add.cpp` is imported, it generates Node-API glue around the file, builds it into a `.node` addon
+  with the platform's compiler (MSVC on Windows; `cc`, gcc or clang on Linux and macOS) and resolves
+  the import to a generated module that exports the addon's functions. A Rust file is first built
+  into a static library with `rustc`, which the same glue links.
 
 ## Status
 

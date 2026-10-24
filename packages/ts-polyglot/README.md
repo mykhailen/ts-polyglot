@@ -80,7 +80,7 @@ Both halves read signatures with the same parser, [src/signatures.ts](src/signat
 - **Runtime: a Node hook** ([src/register.ts](src/register.ts), [src/build.ts](src/build.ts)).
   Importing `add.cpp` generates Node-API glue that `#include`s the file and wraps each function. The
   platform's compiler (see [Compilers](#compilers)) builds the glue into a `.node` addon, and the
-  module exports the addon's functions. A Rust file
+  import resolves to a generated module that exports the addon's functions. A Rust file
   becomes a module of a small crate with `extern "C"` wrappers. `rustc` builds that crate into a
   static library, which the glue links. Builds are cached by source hash in
   `node_modules/.cache/ts-polyglot`. Set `TS_POLYGLOT_CACHE_DIR` to keep the cache somewhere else.
@@ -106,4 +106,5 @@ includes pointers, strings, structs, namespaces, `extern "C" { }` blocks, generi
 - The runtime hook compiles and loads native code from any imported `.c`, `.cpp` or `.rs` file.
   Only use it with code you trust.
 - `TS_POLYGLOT_DEBUG=1` builds unoptimized addons with debug info for a native debugger: `.pdb`
-  files on Windows, `-g -O0` elsewhere.
+  files on Windows, `-g -O0` elsewhere. Breakpoints in a native file are for that debugger: the
+  JavaScript debugger never sees the file as a script and leaves them unbound.

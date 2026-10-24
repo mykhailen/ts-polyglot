@@ -34,7 +34,7 @@ setup), none of which is written down anywhere else.
 | `packages/ts-polyglot/src/build.ts` | Node-API glue generation, the Rust wrapper crate, the addon cache |
 | `packages/ts-polyglot/src/compiler.ts` | picks the compiler for a file: `CC`/`CXX`, the `"ts-polyglot"` field in package.json, or the platform default; spawns nothing |
 | `packages/ts-polyglot/src/toolchain.ts` | the build commands: MSVC (`vswhere`, `vcvars64.bat`, the Node-API import library) and gcc/clang on Linux and macOS |
-| `packages/ts-polyglot/src/register.ts` | the Node load hook |
+| `packages/ts-polyglot/src/register.ts` | the Node resolve hook: an import of a native file resolves to the generated module in the cache |
 | `packages/ts-polyglot/test/` | `node:test` suites: unit tests import `src/`; `e2e.test.ts` runs the real `tsc` and `node` (so `dist/`) over the projects in `test/fixtures/`; `pack.test.ts` installs the packed tarball outside the repo, as a user would |
 | `packages/ts-polyglot/dist/` | what actually runs: JavaScript and source maps from `tsconfig.build.json`, which `exports` and the mapper's `exec` point at (git-ignored) |
 | `examples/native-demo/` | a consumer project: `add.cpp`, `geometry.c`, `numbers.rs`, `main.ts` |
@@ -68,7 +68,9 @@ node packages/create-ts-polyglot/dist/cli.js my-app --no-install   # the scaffol
 
 VS Code debug configurations are in `.vscode/launch.json`: the example, the mapper under `tsc`, the
 mapper inside the editor, and a compound that debugs TypeScript and C, C++ or Rust in one process.
-The ones that start a process build `dist/` first.
+The ones that start a process build `dist/` first. Breakpoints in native files are the native
+debugger's alone: no JavaScript runs under a native file's URL, so the JavaScript debugger leaves
+them unbound.
 
 ## Environment
 
@@ -108,8 +110,8 @@ The ones that start a process build `dist/` first.
   `as const` objects), `.ts` extensions on relative imports (the build rewrites them), and
   `import type` for types.
 - **Comments say why, not what.** Match the density of the existing files.
-- **Bump `GLUE_VERSION` in `build.ts`** whenever the generated C, C++ or Rust, or the compiler flags,
-  change, so cached addons rebuild.
+- **Bump `GLUE_VERSION` in `build.ts`** whenever the generated C, C++, Rust or JavaScript, or the
+  compiler flags, change, so cached addons rebuild.
 - **Mapper rules** (details in the docs):
   - Verbatim spans must be identical text on both sides.
   - `transform` diagnostics stop all type checking, so don't use them for "unsupported, skipped".
