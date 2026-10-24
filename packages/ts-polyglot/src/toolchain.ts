@@ -86,17 +86,6 @@ export function unixArgs(build: AddonBuild, platform: NodeJS.Platform, arch: str
   ];
 }
 
-/** rustc builds for its own host, so on macOS it's told Node's architecture, as the C side is. */
-export function rustTargetArgs(platform: NodeJS.Platform, arch: string): string[] {
-  if (platform !== "darwin") return [];
-  return ["--target", arch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin"];
-}
-
-/** MSVC's linker reads .lib archives; gcc and clang read lib*.a ones. */
-export function rustStaticLibName(compiler: Compiler): string {
-  return compiler.family === "msvc" ? "user.lib" : "libuser.a";
-}
-
 interface Toolchain {
   env: NodeJS.ProcessEnv;
   /** Directory of cl.exe and lib.exe. */

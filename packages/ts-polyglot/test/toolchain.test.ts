@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { rustStaticLibName, rustTargetArgs, unixArgs, type AddonBuild } from "../src/toolchain.ts";
+import { rustStaticLibName, rustTargetArgs } from "../src/languages/rust/build.ts";
+import { unixArgs, type AddonBuild } from "../src/toolchain.ts";
 
 const build: AddonBuild = { language: "c", glue: "glue.c", libs: ["libuser.a", "-lm"], out: "a.node", debug: false, cacheRoot: "cache" };
 

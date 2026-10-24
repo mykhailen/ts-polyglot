@@ -5,7 +5,8 @@
 //
 // C and C++: generated glue `#include`s the source file and wraps each function, so the glue sees
 // the real declarations and C++ linkage just works. Rust: the file becomes a module of a small
-// crate whose `extern "C"` wrappers are compiled to a static library, which the glue links.
+// crate whose `extern "C"` wrappers are compiled to a static library, which the glue links
+// (languages/rust/build.ts).
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { constants } from "node:os";
@@ -14,8 +15,9 @@ import { fileURLToPath } from "node:url";
 
 import { resolveCompiler } from "./compiler.ts";
 import { findFunctions, languageOf } from "./languages/index.ts";
+import { rustPrototype, rustStaticLib, rustStaticLibName } from "./languages/rust/build.ts";
 import type { NativeFunction } from "./signatures.ts";
-import { compileAddon, run, rustStaticLibName, rustTargetArgs } from "./toolchain.ts";
+import { compileAddon } from "./toolchain.ts";
 
 // Bump to rebuild every cached addon after changing the generated code or the compiler flags.
 const GLUE_VERSION = 6;
@@ -56,7 +58,7 @@ export function buildAddon(file: string, source: string): string {
   const libs: string[] = [];
   let glue: string;
   if (language === "rust") {
-    libs.push(...rustStaticLib(file, functions, dir, rustStaticLibName(compiler)));
+    libs.push(...rustStaticLib(file, functions, dir, rustStaticLibName(compiler), debug));
     glue = join(dir, "glue.c");
     writeFileSync(glue, glueSource(functions, functions.map(rustPrototype).join("\n"), (fn) => `ts_polyglot__${fn.name}`));
   } else {
@@ -124,40 +126,4 @@ function glueSource(functions: NativeFunction[], prelude: string, callee: (fn: N
   }
   lines.push("  return exports;", "}", "");
   return lines.join("\n");
-}
-
-function rustStaticLib(file: string, functions: NativeFunction[], dir: string, libName: string): string[] {
-  const wrapper = join(dir, "wrapper.rs");
-  writeFileSync(
-    wrapper,
-    [
-      "#![allow(warnings)]",
-      `#[path = ${JSON.stringify(file.replaceAll("\\", "/"))}]`,
-      "mod user;",
-      "",
-      ...functions.map(rustWrapper),
-    ].join("\n"),
-  );
-  const lib = join(dir, libName);
-  const codegen = debug ? ["-C", "opt-level=0", "-C", "debuginfo=2"] : ["-C", "opt-level=2"];
-  const args = ["--edition", "2021", "--crate-type", "staticlib", ...rustTargetArgs(process.platform, process.arch), ...codegen, "--print", "native-static-libs", "-o", lib, wrapper];
-  const stderr = run("rustc", args, dir, { missing: "ts-polyglot: can't run rustc, which builds .rs files. Install Rust from https://rustup.rs." });
-  // The library needs the system libraries Rust's standard library uses; rustc names them.
-  const native = /native-static-libs:\s*(.*)/.exec(stderr)?.[1]?.trim().split(/\s+/) ?? [];
-  return [lib, ...native];
-}
-
-/** `#[no_mangle] extern "C"` wrapper around a Rust function, using the C boundary types. */
-function rustWrapper(fn: NativeFunction): string {
-  const params = fn.params.map((p) => `${p.name}: ${p.kind.rust}`).join(", ");
-  const args = fn.params.map((p) => (p.type === p.kind.rust ? p.name : `${p.name} as ${p.type}`)).join(", ");
-  const call = `user::${fn.callee}(${args})`;
-  if (fn.returns.ts === "void") return `#[no_mangle]\npub extern "C" fn ts_polyglot__${fn.name}(${params}) {\n    ${call};\n}\n`;
-  const body = fn.returnType === fn.returns.rust ? call : `${call} as ${fn.returns.rust}`;
-  return `#[no_mangle]\npub extern "C" fn ts_polyglot__${fn.name}(${params}) -> ${fn.returns.rust} {\n    ${body}\n}\n`;
-}
-
-function rustPrototype(fn: NativeFunction): string {
-  const params = fn.params.map((p, i) => `${p.kind.c} arg${i}`).join(", ") || "void";
-  return `${fn.returns.c} ts_polyglot__${fn.name}(${params});`;
 }
