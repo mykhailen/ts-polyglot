@@ -12,3 +12,19 @@ pub mod stats {
         x.max(lo).min(hi)
     }
 }
+
+// A panic unwinding out of the wrapper would abort the process; the wrapper turns it into an Error.
+pub fn panics(x: i32) -> i32 {
+    if x > 0 {
+        panic!("boom")
+    }
+    x
+}
+
+pub fn echo_usize(n: usize) -> usize {
+    n
+}
+
+pub fn next_char(c: char) -> char {
+    char::from_u32(c as u32 + 1).unwrap_or(c)
+}

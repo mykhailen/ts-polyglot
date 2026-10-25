@@ -55,8 +55,8 @@ test("C, C++ and Rust functions run from the installed tarball", { skip }, () =>
   const output = JSON.parse(result.stdout);
   assert.equal(output.add, 5);
   assert.equal(output.multiply, 42);
-  assert.equal(output.fib, 12586269025);
-  assert.equal(output.echo, -5);
+  assert.equal(output.fib, "12586269025n");
+  assert.equal(output.echo, "-5n");
   assert.equal(output.scale, 12);
   assert.equal(output.clamp, 10);
 });

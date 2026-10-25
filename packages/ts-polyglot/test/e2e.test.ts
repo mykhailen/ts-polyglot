@@ -50,11 +50,42 @@ test("C, C++ and Rust functions run", () => {
   assert.equal(status, 0, stderr);
   assert.equal(output.add, 5);
   assert.equal(output.multiply, 42);
-  assert.equal(output.fib, 12586269025);
-  assert.equal(output.echo, -5);
+  assert.equal(output.fib, "12586269025n");
+  assert.equal(output.echo, "-5n");
   // A function in a namespace, and one in a `pub mod`: the glue calls them by their qualified names.
   assert.equal(output.scale, 12);
   assert.equal(output.clamp, 10);
+});
+
+test("64-bit integers are bigints out and take numbers or bigints in", () => {
+  const { output } = run("project");
+  assert.equal(output.u64, "18446744073709551615n");
+  assert.equal(output.u64Number, "5n");
+  assert.equal(output.count, "7n");
+  assert.equal(output.usize, "7n");
+  assert.equal(output.bigOver.error, "RangeError: echo_u64(): x must be an integer between 0 and 18446744073709551615");
+});
+
+test("conversions are strict: wrong types are TypeErrors, impossible values RangeErrors, with the limits in the message", () => {
+  const { output } = run("project");
+  assert.equal(output.i8, -128);
+  assert.equal(output.i8Over.error, "RangeError: echo_i8(): x must be an integer between -128 and 127");
+  assert.equal(output.i8Big, 5); // a bigint is fine for a narrow integer at runtime; TypeScript says number
+  assert.equal(output.negate, false);
+  assert.equal(output.notBool.error, "TypeError: negate(): b must be a boolean");
+  assert.equal(output.fractional.error, "RangeError: add(): a must be an integer between -2147483648 and 2147483647");
+  assert.equal(output.wrongType.error, "TypeError: add(): a must be an integer between -2147483648 and 2147483647");
+  assert.equal(output.negativeUnsigned.error, "RangeError: fib(): n must be an integer between 0 and 4294967295");
+  assert.equal(output.half, 1.5);
+  assert.equal(output.char, "b");
+  assert.equal(output.charTwo.error, "RangeError: next_char(): c must be one character");
+});
+
+test("a C++ exception and a Rust panic are JavaScript errors with the message", () => {
+  const { output } = run("project");
+  assert.equal(output.throws.error, "Error: boom");
+  assert.equal(output.throwsNot, -1);
+  assert.equal(output.panics.error, "Error: boom");
 });
 
 test("a C function named like a libc function runs, not libc's", () => {
@@ -83,7 +114,12 @@ test("addons are built in TS_POLYGLOT_CACHE_DIR", () => {
 });
 
 test("C long keeps 64 bits on Linux and macOS", { skip: windows }, () => {
-  assert.equal(run("project").output.wide, 2 ** 40);
+  assert.equal(run("project").output.wide, "1099511627776n");
+});
+
+// The TypeScript type is the same everywhere; the glue checks against the platform's LONG_MAX.
+test("C long is 32 bits on Windows, and a value past that is a RangeError", { skip: !windows }, () => {
+  assert.equal(run("project").output.wide.error, "RangeError: echo_long(): x must be an integer between -2147483648 and 2147483647");
 });
 
 test("package.json picks clang on Linux and macOS", { skip: windows }, () => {

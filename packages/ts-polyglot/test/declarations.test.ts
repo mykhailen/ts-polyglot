@@ -48,3 +48,13 @@ test("a file without functions exports nothing", () => {
   assert.equal(toDeclarations("comments.rs", "// nothing here\n/* or here */\n").text, "export {};\n");
   assert.deepEqual(toDeclarations("empty.c", "").mappings, []);
 });
+
+test("64-bit integers are bigint results and number | bigint parameters", () => {
+  assert.equal(checkVerbatim("values.c", "long echo_long(long x) { return x; }\n"), "/** `long echo_long(long x)` from values.c, run through a Node-API addon. */\nexport declare function echo_long(x: number | bigint): bigint;\n");
+  assert.match(checkVerbatim("n.rs", "pub fn fib(n: u32) -> i64 { 0 }\n"), /fib\(n: number\): bigint;/);
+});
+
+test("a const reference parameter types as its target; Rust char is a string", () => {
+  assert.match(checkVerbatim("r.cpp", "int f(const int& a) { return a; }\n"), /f\(a: number\): number;/);
+  assert.match(checkVerbatim("c.rs", "pub fn c(x: char) -> char { x }\n"), /c\(x: string\): string;/);
+});
