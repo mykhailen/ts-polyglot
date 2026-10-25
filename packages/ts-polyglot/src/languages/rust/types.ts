@@ -2,6 +2,7 @@
 // boundary, and the macros that bound it. Every Rust integer type is FFI-safe, so the wrapper keeps the
 // user's spelling and only the C prototype names the twin (`isize` is `intptr_t` there).
 import { oneLine, type NativeType } from "../../signatures.ts";
+import type { AbiType } from "../language.ts";
 
 export interface RustType {
   type: NativeType;
@@ -42,4 +43,14 @@ const TABLE = new Map<string, RustType>([
 /** The table entry for a spelling; undefined for anything not a known primitive or string. */
 export function rustType(spelling: string): RustType | undefined {
   return TABLE.get(oneLine(spelling));
+}
+
+/** How a supported Rust type crosses the wrapper's boundary. A reference crosses as its target. */
+export function rustAbi(type: NativeType): AbiType {
+  if (type.kind === "reference") return rustAbi(type.to);
+  const entry = rustType(type.spelling);
+  if (type.kind === "int" && entry) return { kind: "int", c: entry.c, bits: type.bits, signed: type.signed, min: entry.min!, max: entry.max! };
+  if (type.kind === "float" && entry) return { kind: "float", c: entry.c, bits: type.bits };
+  if ((type.kind === "bool" || type.kind === "void" || type.kind === "char") && entry) return { kind: type.kind, c: entry.c };
+  throw new Error(`ts-polyglot: ${type.spelling} isn't marshaled yet`);
 }

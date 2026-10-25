@@ -9,9 +9,11 @@ import type { Node } from "web-tree-sitter";
 import { headerText } from "../../parser.ts";
 import { oneLine, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
+import { rustBridge } from "./bridge.ts";
 import { rustType } from "./types.ts";
 
-export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", parse: rustModule };
+// The wrapper crate's C ABI is plain C, so its glue is too.
+export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", parse: rustModule, glue: "c", bridge: rustBridge };
 
 // tree-sitter-rust has two comment nodes where the C grammars have one.
 const COMMENTS = ["line_comment", "block_comment"];
