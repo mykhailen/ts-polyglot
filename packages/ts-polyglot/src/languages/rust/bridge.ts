@@ -68,6 +68,11 @@ export function rustWrapperSource(file: string, module: NativeModule): string {
     "    ts_polyglot_string { ptr: Box::into_raw(boxed) as *mut u8, len, release: Some(ts_polyglot_release) }",
     "}",
     "",
+    "// The bytes of a string the glue passed; an empty one may come without a buffer.",
+    "unsafe fn ts_polyglot_bytes(s: &ts_polyglot_string) -> &[u8] {",
+    "    if s.ptr.is_null() { &[] } else { std::slice::from_raw_parts(s.ptr, s.len) }",
+    "}",
+    "",
     "fn ts_polyglot_panic_message(payload: &Box<dyn std::any::Any + Send>, name: &str) -> String {",
     "    if let Some(s) = payload.downcast_ref::<&str>() { s.to_string() }",
     "    else if let Some(s) = payload.downcast_ref::<String>() { s.clone() }",
@@ -78,16 +83,31 @@ export function rustWrapperSource(file: string, module: NativeModule): string {
   ].join("\n");
 }
 
-/** The wrapper's own type for a value: the user's spelling, except a `char`, which crosses as its code point. */
+/** The wrapper's own type for a value: the user's spelling, except a `char`, which crosses as its code point, and text, which crosses as the ABI string. */
 function boundary(type: NativeType): string {
   if (type.kind === "reference") return boundary(type.to);
-  return type.kind === "char" ? "u32" : type.spelling;
+  if (type.kind === "char") return "u32";
+  if (type.kind === "string") return "ts_polyglot_string";
+  return type.spelling;
 }
 
-/** The expression that turns a wrapper parameter into the user function's argument. */
+/** Whether a parameter arrives as text the wrapper has to validate first. */
+const isText = (type: NativeType) => type.kind === "string" || (type.kind === "reference" && type.to.kind === "string");
+
+/** The expression that turns a wrapper parameter into the user function's argument. A text parameter has been rebound to a `&str` by then. */
 function argument(name: string, type: NativeType): string {
+  if (type.kind === "reference" && type.to.kind === "string") return type.to.spelling === "str" ? name : `&String::from(${name})`;
+  if (type.kind === "string") return `${name}.to_owned()`;
   if (type.kind === "reference") return `&${argument(name, type.to)}`;
   return type.kind === "char" ? `char::from_u32(${name}).unwrap_or('\\u{FFFD}')` : name;
+}
+
+/** How a user function's result becomes the wrapper's: text is copied into an owned ABI string. */
+function lower(type: NativeType): string {
+  if (type.kind === "char") return "r as u32";
+  if (type.kind === "string") return "ts_polyglot_own(&r)";
+  if (type.kind === "reference" && type.to.kind === "string") return "ts_polyglot_own(r)";
+  return "r";
 }
 
 /** `#[no_mangle] extern "C"` wrapper around a user function: boundary types in and out, the error slot set on a panic. */
@@ -96,10 +116,15 @@ export function rustWrapper(fn: NativeFunction): string {
   const params = [...fn.params.map((param) => `${param.name}: ${boundary(param.type)}`), `${slot}: *mut ts_polyglot_string`].join(", ");
   const call = `user::${fn.callee}(${fn.params.map((param) => argument(param.name, param.type)).join(", ")})`;
   const returns = fn.returns.kind === "void" ? "" : ` -> ${boundary(fn.returns)}`;
-  const lowered = fn.returns.kind === "char" ? "r as u32" : "r";
+  const lowered = lower(fn.returns);
+  // The glue's UTF-8 is well-formed (measured), so this never fails; it still reports instead of trusting.
+  const texts = fn.params
+    .filter((param) => isText(param.type))
+    .map((param) => `    let ${param.name} = match std::str::from_utf8(unsafe { ts_polyglot_bytes(&${param.name}) }) { Ok(v) => v, Err(_) => { unsafe { *${slot} = ts_polyglot_own(${JSON.stringify(`${fn.name}(): ${param.name} isn't valid UTF-8`)}) }; return unsafe { std::mem::zeroed() }; } };`);
   return [
     "#[no_mangle]",
     `pub extern "C" fn ts_polyglot__${fn.name}(${params})${returns} {`,
+    ...texts,
     `    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ${call})) {`,
     `        Ok(r) => ${lowered},`,
     `        Err(p) => { unsafe { *${slot} = ts_polyglot_own(&ts_polyglot_panic_message(&p, ${JSON.stringify(fn.name)})) }; unsafe { std::mem::zeroed() } }`,

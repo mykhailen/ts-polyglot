@@ -67,7 +67,7 @@ export interface NativeModule {
 
 /**
  * Whether the glue marshals a value of this type. An immutable reference crosses by value, with the
- * callee borrowing the glue's copy for the call. Strings and structs join as the glue learns them.
+ * callee borrowing the glue's copy for the call. Structs join as the glue learns them.
  */
 export function supported(type: NativeType, _module: NativeModule): boolean {
   switch (type.kind) {
@@ -76,6 +76,7 @@ export function supported(type: NativeType, _module: NativeModule): boolean {
     case "int":
     case "float":
     case "char":
+    case "string":
       return true;
     case "reference":
       return !type.mutable && supported(type.to, _module);

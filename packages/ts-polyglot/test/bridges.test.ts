@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
 import { cBridge } from "../src/languages/c.ts";
-import { cppBridge } from "../src/languages/cpp.ts";
+import { cppBridge, cppShim } from "../src/languages/cpp.ts";
 import { languages, loadLanguage, parseModule } from "../src/languages/index.ts";
 import type { BridgeInput } from "../src/languages/language.ts";
 import { rustPrelude, rustWrapperSource } from "../src/languages/rust/bridge.ts";
@@ -48,4 +48,22 @@ test("the Rust wrapper keeps the user's spellings, catches panics and reports th
   assert.match(prelude, /^int32_t ts_polyglot__panics\(int32_t arg0, ts_polyglot_string\* error\);$/m);
   assert.match(prelude, /^intptr_t ts_polyglot__clamp\(intptr_t arg0, intptr_t arg1, intptr_t arg2, ts_polyglot_string\* error\);$/m);
   assert.match(prelude, /^uint32_t ts_polyglot__next\(uint32_t arg0, ts_polyglot_string\* error\);$/m);
+});
+
+test("the C++ shim builds std::string and std::string_view from the ABI string and copies string results", () => {
+  const module = parseModule("#include <string>\nstd::string shout(const std::string& s, std::string_view v, const char* c) { return s; }\n", "cpp");
+  const shim = cppShim(module.functions[0]!);
+  assert.match(shim, /static ts_polyglot_string ts_polyglot__shim_shout\(ts_polyglot_string s, ts_polyglot_string v, const char\* c, ts_polyglot_string\* error\)/);
+  assert.match(shim, /shout\(std::string\(s\.ptr, s\.len\), std::string_view\(v\.ptr, v\.len\), c\)/);
+  assert.match(shim, /return ts_polyglot__own\(r\.data\(\), r\.size\(\)\)/);
+});
+
+test("the Rust wrapper validates UTF-8 and owns string results", () => {
+  const module = parseModule('pub fn shout(s: &str, o: String, r: &String) -> String { o }\npub fn motto() -> &\'static str { "" }\n', "rust");
+  const wrapper = rustWrapperSource("D:\\p\\s.rs", module);
+  assert.match(wrapper, /fn ts_polyglot__shout\(s: ts_polyglot_string, o: ts_polyglot_string, r: ts_polyglot_string, error: \*mut ts_polyglot_string\) -> ts_polyglot_string/);
+  assert.match(wrapper, /std::str::from_utf8/);
+  assert.match(wrapper, /user::shout\(s, o\.to_owned\(\), &String::from\(r\)\)/);
+  assert.match(wrapper, /Ok\(r\) => ts_polyglot_own\(&r\)/);
+  assert.match(wrapper, /fn ts_polyglot__motto\(error: \*mut ts_polyglot_string\) -> ts_polyglot_string/);
 });

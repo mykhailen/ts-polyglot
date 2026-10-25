@@ -5,7 +5,7 @@
 import { cFamilyModule } from "./c-family.ts";
 import { cAbi } from "./c-types.ts";
 import type { Bridge, BridgeInput, LanguageModule } from "./language.ts";
-import type { NativeFunction } from "../signatures.ts";
+import type { NativeFunction, Param } from "../signatures.ts";
 
 export const cpp: LanguageModule = { id: "cpp", extensions: [".cpp", ".cc", ".cxx"], grammar: "tree-sitter-cpp.wasm", parse: (root, source) => cFamilyModule(root, source, "cpp"), glue: "cpp", bridge: cppBridge };
 
@@ -15,6 +15,8 @@ export function cppBridge(input: BridgeInput): Bridge {
     "#include <cstdlib>",
     "#include <cstring>",
     "#include <exception>",
+    "#include <string>",
+    "#include <string_view>",
     "",
     "// Owned strings for the slot: a malloc'd copy the glue releases.",
     "static void ts_polyglot__release(char* ptr, size_t) { free(ptr); }",
@@ -40,14 +42,24 @@ export function cppShim(fn: NativeFunction): string {
   // The slot's name must not shadow a parameter.
   const slot = fn.params.some((param) => param.name === "error") ? "ts_polyglot_error" : "error";
   const params = [...fn.params.map((param) => `${cAbi(param.type).c} ${param.name}`), `ts_polyglot_string* ${slot}`].join(", ");
-  const call = `${fn.callee}(${fn.params.map((param) => param.name).join(", ")})`;
+  const call = `${fn.callee}(${fn.params.map(cppArgument).join(", ")})`;
+  // A std::string-family result is copied into an owned ABI string: a `const std::string&` may refer
+  // to the shim's own argument, which dies with the shim.
+  const body = returns.kind === "void" ? `${call};` : returns.kind === "string" ? `auto r = ${call}; return ts_polyglot__own(r.data(), r.size());` : `return ${call};`;
   return [
     `static ${returns.c} ts_polyglot__shim_${fn.name}(${params}) {`,
-    `  try { ${returns.kind === "void" ? `${call};` : `return ${call};`} }`,
+    `  try { ${body} }`,
     `  catch (const std::exception& e) { *${slot} = ts_polyglot__own(e.what()); }`,
     `  catch (...) { *${slot} = ts_polyglot__own("${fn.name}() threw an exception"); }`,
-    ...(returns.kind === "void" ? [] : [`  return ${returns.c}{};`]),
+    ...(returns.kind === "void" ? [] : [`  return ${returns.kind === "cstring" ? "NULL" : `${returns.c}{}`};`]),
     "}",
     "",
   ].join("\n");
+}
+
+/** The argument the user's function gets from a shim parameter: the std::string family is built from the ABI string's bytes. */
+function cppArgument(param: Param): string {
+  const type = param.type.kind === "reference" ? param.type.to : param.type;
+  if (type.kind !== "string" || type.nullable) return param.name;
+  return `${type.spelling === "std::string_view" ? "std::string_view" : "std::string"}(${param.name}.ptr, ${param.name}.len)`;
 }

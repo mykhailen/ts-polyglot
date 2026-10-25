@@ -28,3 +28,19 @@ pub fn echo_usize(n: usize) -> usize {
 pub fn next_char(c: char) -> char {
     char::from_u32(c as u32 + 1).unwrap_or(c)
 }
+
+pub fn shout(s: &str) -> String {
+    format!("{}!", s.to_uppercase())
+}
+
+pub fn byte_len(s: String) -> usize {
+    s.len()
+}
+
+pub fn motto() -> &'static str {
+    "ship it"
+}
+
+pub fn echo_ref(s: &String) -> String {
+    s.clone()
+}

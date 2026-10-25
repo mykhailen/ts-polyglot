@@ -48,8 +48,9 @@ test("const and volatile qualifiers are dropped from a type", () => {
   assert.deepEqual(fn?.params.map((p) => p.type.spelling), ["int", "int", "int"]);
 });
 
-test("pointers, arrays, function pointers and variadics skip the function", () => {
-  assert.deepEqual(find("int f(const char *s) { return 0; }\nint g(int a[]) { return 0; }\nint h(int (*cb)(int)) { return 0; }\nint v(int a, ...) { return 0; }\nint *p(int a) { return 0; }"), []);
+test("arrays, non-const pointers, function pointers and variadics skip the function; const char* is a string", () => {
+  const found = find("int f(const char *s) { return 0; }\nint g(int a[]) { return 0; }\nint h(int (*cb)(int)) { return 0; }\nint v(int a, ...) { return 0; }\nint *p(int a) { return 0; }\nint q(char* s) { return 0; }");
+  assert.deepEqual(found.map((fn) => [fn.name, fn.params[0]?.type.kind]), [["f", "string"]]);
 });
 
 test("size_t crosses as a 64-bit unsigned integer; a name the file doesn't define is unknown and skips the function", () => {

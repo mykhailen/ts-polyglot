@@ -58,3 +58,9 @@ test("a const reference parameter types as its target; Rust char is a string", (
   assert.match(checkVerbatim("r.cpp", "int f(const int& a) { return a; }\n"), /f\(a: number\): number;/);
   assert.match(checkVerbatim("c.rs", "pub fn c(x: char) -> char { x }\n"), /c\(x: string\): string;/);
 });
+
+test("strings: const char* is string | null, the owning and view types are string", () => {
+  assert.match(checkVerbatim("n.c", "const char* describe(const char* s) { return s; }\n"), /describe\(s: string \| null\): string \| null;/);
+  assert.match(checkVerbatim("s.cpp", "std::string shout(const std::string& s, std::string_view v, std::string o) { return o; }\n"), /shout\(s: string, v: string, o: string\): string;/);
+  assert.match(checkVerbatim("s.rs", "pub fn shout(s: &str, o: String, r: &String) -> String { o }\npub fn motto() -> &'static str { \"\" }\n"), /shout\(s: string, o: string, r: string\): string;\n.*\nexport declare function motto\(\): string;/);
+});

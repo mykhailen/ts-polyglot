@@ -48,8 +48,9 @@ test("a default argument is a required parameter for now", () => {
   assert.deepEqual(fn?.params.map((p) => [p.name, p.type.spelling]), [["a", "int"], ["b", "int"]]);
 });
 
-test("references skip the function", () => {
-  assert.deepEqual(find("#include <string>\nint f(const std::string& s) { return 0; }\nint g(int& r) { return r; }"), []);
+test("a const reference crosses as its target; a mutable reference skips the function", () => {
+  const found = find("#include <string>\nint f(const std::string& s) { return 0; }\nint g(int& r) { return r; }");
+  assert.deepEqual(found.map((fn) => [fn.name, fn.params[0]?.type.kind]), [["f", "reference"]]);
 });
 
 test("a class method is not a function, its neighbor is", () => {

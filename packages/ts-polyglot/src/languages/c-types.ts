@@ -80,5 +80,7 @@ export function cAbi(type: NativeType): AbiType {
   if (type.kind === "int" && entry) return { kind: "int", c: entry.c, bits: type.bits, signed: type.signed, min: entry.min!, max: entry.max! };
   if (type.kind === "float" && entry) return { kind: "float", c: entry.c, bits: type.bits };
   if ((type.kind === "bool" || type.kind === "void") && entry) return { kind: type.kind, c: entry.c };
+  // A `const char*` crosses as itself; the std::string family crosses as the ABI string the shim converts.
+  if (type.kind === "string") return type.nullable ? { kind: "cstring", c: "const char*" } : { kind: "string", c: "ts_polyglot_string" };
   throw new Error(`ts-polyglot: ${type.spelling} isn't marshaled yet`);
 }

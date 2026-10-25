@@ -61,8 +61,8 @@ test("pub mod nesting gives a module path callee; a private mod hides its functi
   assert.deepEqual(found.map((f) => [f.name, f.callee]), [["deep", "outer::inner::deep"], ["s", "seen::s"]]);
 });
 
-test("unknown types skip the function", () => {
-  assert.deepEqual(find("pub fn s(x: &str) -> i32 { 0 }\npub fn v(x: Vec<u8>) -> i32 { 0 }\npub fn r(x: i32) -> String { String::new() }"), []);
+test("strings cross; a Vec doesn't, and skips its function", () => {
+  assert.deepEqual(find("pub fn s(x: &str) -> i32 { 0 }\npub fn v(x: Vec<u8>) -> i32 { 0 }\npub fn r(x: i32) -> String { String::new() }").map((f) => f.name), ["s", "r"]);
 });
 
 test("a half-typed file keeps the functions before the break", () => {

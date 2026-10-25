@@ -88,6 +88,27 @@ test("a C++ exception and a Rust panic are JavaScript errors with the message", 
   assert.equal(output.panics.error, "Error: boom");
 });
 
+test("strings cross as UTF-8 in both directions, with C's NUL and NULL rules", () => {
+  const { output } = run("project");
+  assert.equal(output.describeNull, null);
+  assert.equal(output.describe, "non-negative");
+  assert.equal(output.bytes, "6n");
+  assert.equal(output.bytesNull, "0n");
+  assert.equal(output.nulInC.error, "RangeError: byte_count(): s must be a string without NUL characters, or null");
+  assert.equal(output.long, "100000n");
+  assert.equal(output.shoutCpp, "HéLLO 😀!");
+  assert.equal(output.firstWord, "hello");
+  assert.equal(output.repeatNul, "ab\0ab\0");
+  assert.equal(output.shoutRs, "HÉLLO!");
+  assert.equal(output.emoji, "4n");
+  // A lone surrogate reaches Rust as U+FFFD, three bytes, not as an error.
+  assert.equal(output.loneSurrogate, "3n");
+  assert.equal(output.motto, "ship it");
+  assert.equal(output.echoLong, 100000);
+  assert.equal(output.wrongString.error, "TypeError: shout(): s must be a string");
+  assert.equal(output.nullToOwned.error, "TypeError: byte_len(): s must be a string");
+});
+
 test("a C function named like a libc function runs, not libc's", () => {
   assert.equal(run("project").output.random, 10);
 });

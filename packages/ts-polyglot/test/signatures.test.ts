@@ -20,6 +20,12 @@ test("supported: primitives and immutable references to them", () => {
   assert.ok(supported({ kind: "reference", to: int(32, true), mutable: false, spelling: "const int&" }, empty));
 });
 
+test("supported: strings, nullable or not, and references to them", () => {
+  assert.ok(supported({ kind: "string", nullable: true, spelling: "const char*" }, empty));
+  assert.ok(supported({ kind: "string", nullable: false, spelling: "std::string" }, empty));
+  assert.ok(supported({ kind: "reference", mutable: false, to: { kind: "string", nullable: false, spelling: "str" }, spelling: "&str" }, empty));
+});
+
 test("supported: mutable references, pointers, arrays and unknowns are not", () => {
   assert.equal(supported({ kind: "reference", to: int(32, true), mutable: true, spelling: "int&" }, empty), false);
   assert.equal(supported({ kind: "pointer", to: int(32, true), const: false, spelling: "int*" }, empty), false);

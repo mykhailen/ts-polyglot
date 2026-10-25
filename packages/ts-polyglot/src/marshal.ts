@@ -157,6 +157,61 @@ static napi_value ts_polyglot_make_char(napi_env env, uint32_t c) {
   return result;
 }
 
+// A C string: a malloc'd NUL-terminated UTF-8 copy, or NULL for null. The C side would see an embedded
+// NUL as the end of the string, so one is a RangeError.
+static bool ts_polyglot_read_cstring(napi_env env, napi_value value, char** out, const char* fn, const char* path) {
+  napi_valuetype type;
+  size_t length;
+  char* copy;
+  napi_typeof(env, value, &type);
+  if (type == napi_null) {
+    *out = NULL;
+    return true;
+  }
+  if (type != napi_string) return ts_polyglot_fail(env, false, fn, path, "a string without NUL characters, or null");
+  napi_get_value_string_utf8(env, value, NULL, 0, &length);
+  copy = (char*)malloc(length + 1);
+  if (!copy) return ts_polyglot_fail(env, true, fn, path, "a string that fits in memory");
+  napi_get_value_string_utf8(env, value, copy, length + 1, &length);
+  if (strlen(copy) != length) {
+    free(copy);
+    return ts_polyglot_fail(env, true, fn, path, "a string without NUL characters, or null");
+  }
+  *out = copy;
+  return true;
+}
+
+// Text with its length, for a shim or wrapper: a malloc'd copy the glue frees after the call. A NUL is just a byte.
+static bool ts_polyglot_read_string(napi_env env, napi_value value, ts_polyglot_string* out, const char* fn, const char* path) {
+  napi_valuetype type;
+  size_t length;
+  napi_typeof(env, value, &type);
+  if (type != napi_string) return ts_polyglot_fail(env, false, fn, path, "a string");
+  napi_get_value_string_utf8(env, value, NULL, 0, &length);
+  out->ptr = (char*)malloc(length + 1);
+  if (!out->ptr) return ts_polyglot_fail(env, true, fn, path, "a string that fits in memory");
+  napi_get_value_string_utf8(env, value, out->ptr, length + 1, &length);
+  out->len = length;
+  out->release = NULL;
+  return true;
+}
+
+// A C string result is borrowed: copied, never freed. NULL is null.
+static napi_value ts_polyglot_make_cstring(napi_env env, const char* text) {
+  napi_value result;
+  if (text) napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &result);
+  else napi_get_null(env, &result);
+  return result;
+}
+
+// A string result from a shim or wrapper: copied, then released if it was owned.
+static napi_value ts_polyglot_make_string(napi_env env, ts_polyglot_string text) {
+  napi_value result;
+  napi_create_string_utf8(env, text.ptr ? text.ptr : "", text.len, &result);
+  if (text.release) text.release(text.ptr, text.len);
+  return result;
+}
+
 // The error slot a shim or wrapper filled: thrown as an Error with the message, then released.
 static void ts_polyglot_throw_slot(napi_env env, ts_polyglot_string error) {
   char* message = (char*)malloc(error.len + 1);
@@ -186,6 +241,11 @@ export function readArgument(abi: AbiType, value: string, into: string, fn: stri
       return [`if (!ts_polyglot_read_bool(env, ${value}, &${into}, ${where})) goto fail;`];
     case "char":
       return [`if (!ts_polyglot_read_char(env, ${value}, &${into}, ${where})) goto fail;`];
+    case "cstring":
+      // The local is the `const char*` the callee takes; the reader writes it through a `char**`.
+      return [`if (!ts_polyglot_read_cstring(env, ${value}, (char**)&${into}, ${where})) goto fail;`];
+    case "string":
+      return [`if (!ts_polyglot_read_string(env, ${value}, &${into}, ${where})) goto fail;`];
     default:
       throw new Error(`ts-polyglot: ${abi.kind} arguments aren't marshaled yet`);
   }
@@ -205,12 +265,23 @@ export function makeResult(abi: AbiType, value: string, into: string): string[] 
       return [`napi_get_boolean(env, ${value}, &${into});`];
     case "char":
       return [`${into} = ts_polyglot_make_char(env, ${value});`];
+    case "cstring":
+      return [`${into} = ts_polyglot_make_cstring(env, ${value});`];
+    case "string":
+      return [`${into} = ts_polyglot_make_string(env, ${value});`];
     default:
       throw new Error(`ts-polyglot: ${abi.kind} results aren't marshaled yet`);
   }
 }
 
-/** C that frees what reading `value` as an argument left owned. Nothing, for the primitives. */
-export function cleanup(_abi: AbiType, _value: string): string[] {
-  return [];
+/** C that frees what reading `value` as an argument left owned: the copies of strings. Safe on a value that was never read. */
+export function cleanup(abi: AbiType, value: string): string[] {
+  switch (abi.kind) {
+    case "cstring":
+      return [`free((char*)${value});`];
+    case "string":
+      return [`free(${value}.ptr);`];
+    default:
+      return [];
+  }
 }

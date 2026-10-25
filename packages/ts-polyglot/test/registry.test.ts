@@ -17,9 +17,9 @@ test("an unsupported first overload doesn't hide a supported second; among suppo
   assert.deepEqual(functions.map((f) => [f.name, f.params.length]), [["h", 1], ["over", 1]]);
 });
 
-test("Rust: a mod's functions and a 64-bit unsigned type are kept", () => {
+test("Rust: a mod's functions, a 64-bit unsigned type and a &str are kept", () => {
   const { functions } = parseModule("pub mod m { pub fn f(x: usize) -> u64 { 0 } }\npub fn g(s: &str) {}\n", "rust");
-  assert.deepEqual(functions.map((f) => f.callee), ["m::f"]); // g waits for strings to be marshaled
+  assert.deepEqual(functions.map((f) => f.callee), ["m::f", "g"]);
 });
 
 test("findFunctions is parseModule's functions", () => {

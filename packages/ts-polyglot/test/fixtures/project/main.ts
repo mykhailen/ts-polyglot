@@ -1,6 +1,6 @@
-import { add, multiply, scale, throws } from "./add.cpp";
-import { random } from "./names.c";
-import { clamp, echo_usize, fib, next_char, panics } from "./numbers.rs";
+import { add, first_word, multiply, repeat, scale, shout, throws } from "./add.cpp";
+import { byte_count, describe, random } from "./names.c";
+import { byte_len, clamp, echo_ref, echo_usize, fib, motto, next_char, panics, shout as shout_rs } from "./numbers.rs";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
 
 // What a call threw, as "Name: message", so the test can check the class and the text.
@@ -40,6 +40,23 @@ const output = {
   throws: attempt(() => throws(1)),
   throwsNot: throws(-1),
   panics: attempt(() => panics(1)),
+  // Strings.
+  describeNull: describe(-1),
+  describe: describe(3),
+  bytes: byte_count("héllo"),
+  bytesNull: byte_count(null),
+  nulInC: attempt(() => byte_count("a\0b")),
+  long: byte_count("x".repeat(100000)),
+  shoutCpp: shout("héllo 😀"),
+  firstWord: first_word("hello world"),
+  repeatNul: repeat("ab\0", 2),
+  shoutRs: shout_rs("héllo"),
+  emoji: byte_len("😀"),
+  loneSurrogate: byte_len("\uD800"),
+  motto: motto(),
+  echoLong: echo_ref("y".repeat(100000)).length,
+  wrongString: attempt(() => shout(5 as never)),
+  nullToOwned: attempt(() => byte_len(null as never)),
 };
 
 // JSON has no bigint; print them with an `n` so the test can tell them from numbers.
