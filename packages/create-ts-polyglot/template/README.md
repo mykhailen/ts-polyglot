@@ -13,7 +13,7 @@ import { fib } from "./numbers.rs"; // pub fn fib(n: u32) -> i64
 ```sh
 npm install
 npm run typecheck   # tsc --runExternalCode: TypeScript types the native files through ts-polyglot
-npm start           # node --import ts-polyglot/register main.ts
+npm start           # node --import ts-polyglot/register src/main.ts
 ```
 
 The first `npm start` compiles each native file into a Node-API addon, which takes a few seconds.

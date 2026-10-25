@@ -9,9 +9,9 @@ npm create ts-polyglot
 
 It asks for a project directory, an editor, and whether to install, then writes:
 
-- `main.ts`, which imports and calls `add.cpp`, `geometry.c` and `numbers.rs`;
+- `src/main.ts`, which imports and calls `add.cpp`, `geometry.c` and `numbers.rs` beside it;
 - `package.json` with TypeScript 7.1 (beta) and ts-polyglot, `npm run typecheck`
-  (`tsc --runExternalCode`) and `npm start` (`node --import ts-polyglot/register main.ts`);
+  (`tsc --runExternalCode`) and `npm start` (`node --import ts-polyglot/register src/main.ts`);
 - `tsconfig.json` with the `contentMappers` entry that hands `.c`, `.cpp` and `.rs` files to
   ts-polyglot;
 - for VS Code: `.vscode/settings.json` (the TypeScript 7 extension on the workspace TypeScript),

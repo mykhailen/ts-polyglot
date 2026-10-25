@@ -47,6 +47,8 @@ First release.
 
 ### 0.3.0 (unreleased)
 
+- The template keeps its sources in `src/`: `main.ts` and the native files it imports. The `start`
+  script and the launch configurations point there.
 - The template asks for ts-polyglot 0.3.0.
 
 ### 0.2.0 (2026-10-23)

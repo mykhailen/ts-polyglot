@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --runExternalCode",
-    "start": "node --import ts-polyglot/register main.ts"
+    "start": "node --import ts-polyglot/register src/main.ts"
   },
   "dependencies": {
     "ts-polyglot": "^0.2.0"

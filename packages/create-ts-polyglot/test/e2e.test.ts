@@ -37,7 +37,7 @@ test("creates a VS Code project from the command line alone", () => {
   const { status, output } = create(["my-app", "--ide", "vscode", "--no-install"]);
   assert.equal(status, 0, output);
   const dir = join(root, "my-app");
-  const expected = ["package.json", "tsconfig.json", "main.ts", "add.cpp", "geometry.c", "numbers.rs", "README.md", ".gitignore", ".vscode/settings.json", ".vscode/extensions.json", ".vscode/launch.json"];
+  const expected = ["package.json", "tsconfig.json", "src/main.ts", "src/add.cpp", "src/geometry.c", "src/numbers.rs", "README.md", ".gitignore", ".vscode/settings.json", ".vscode/extensions.json", ".vscode/launch.json"];
   for (const file of expected) assert.ok(existsSync(join(dir, file)), file);
   assert.equal(JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name, "my-app");
   // The native debugger launches node by full path: the one that ran the CLI, which here is this one.
@@ -67,7 +67,7 @@ test("the project it creates type-checks and runs", { skip }, () => {
 test("--ide none writes no editor files", () => {
   const { status, output } = create(["plain", "--ide", "none", "--no-install"]);
   assert.equal(status, 0, output);
-  assert.ok(existsSync(join(root, "plain", "main.ts")));
+  assert.ok(existsSync(join(root, "plain", "src", "main.ts")));
   assert.ok(!existsSync(join(root, "plain", ".vscode")));
   assert.doesNotMatch(output, /Use Workspace Version/);
 });
@@ -107,7 +107,7 @@ test("the tarball carries the template, dotfiles included", { skip }, () => {
   const [{ files }] = JSON.parse(npm(["pack", "--dry-run", "--ignore-scripts", "--json"], packageDir));
   const paths = files.map((file: { path: string }) => file.path);
   // npm doesn't pack the root LICENSE for a workspace, so the package carries its own copy.
-  for (const path of ["dist/cli.js", "LICENSE", "template/package.json", "template/main.ts", "template/_gitignore", "template/.vscode/settings.json", "template/.vscode/launch.windows.json", "template/.vscode/launch.linux.json", "template/.vscode/launch.osx.json", "template/.vscode/extensions.json"]) {
+  for (const path of ["dist/cli.js", "LICENSE", "template/package.json", "template/src/main.ts", "template/_gitignore", "template/.vscode/settings.json", "template/.vscode/launch.windows.json", "template/.vscode/launch.linux.json", "template/.vscode/launch.osx.json", "template/.vscode/extensions.json"]) {
     assert.ok(paths.includes(path), `${path} not in ${paths.join(", ")}`);
   }
 });

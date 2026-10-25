@@ -18,7 +18,7 @@ const parseJsonc = (text: string) => JSON.parse(text.replace(/^\s*\/\/.*$/gm, ""
 
 test("the project has the demo sources, the config and a README", () => {
   const files = planProject({ name: "my-app", ide: "none" });
-  for (const name of ["package.json", "tsconfig.json", "main.ts", "add.cpp", "geometry.c", "numbers.rs", "README.md", ".gitignore"]) {
+  for (const name of ["package.json", "tsconfig.json", "src/main.ts", "src/add.cpp", "src/geometry.c", "src/numbers.rs", "README.md", ".gitignore"]) {
     assert.ok(files.has(name), name);
   }
   assert.ok(!files.has("_gitignore"));
@@ -62,13 +62,13 @@ test("launch.json debugs main.ts alone, and TypeScript and native code together"
   const launch = launchFor("linux");
   const main = entry(launch, "Debug main.ts");
   assert.equal(main.request, "launch");
-  assert.match(main.program, /main\.ts$/);
+  assert.equal(main.program, "${workspaceFolder}/src/main.ts");
   assert.deepEqual(main.runtimeArgs, ["--import", "ts-polyglot/register"]);
   const compound = entry(launch, "Debug TypeScript + native");
   assert.deepEqual(compound.configurations, ["native half", "TypeScript half"]);
   assert.equal(compound.stopAll, true);
   const native = entry(launch, "native half");
-  assert.deepEqual(native.args, ["--inspect-brk=9229", "--import", "ts-polyglot/register", "main.ts"]);
+  assert.deepEqual(native.args, ["--inspect-brk=9229", "--import", "ts-polyglot/register", "src/main.ts"]);
   assert.deepEqual(native.environment, [{ name: "TS_POLYGLOT_DEBUG", value: "1" }]);
   const ts = entry(launch, "TypeScript half");
   assert.equal(ts.request, "attach");

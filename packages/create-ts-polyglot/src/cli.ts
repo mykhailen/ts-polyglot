@@ -101,8 +101,8 @@ async function main(): Promise<number> {
   const steps: string[] = [];
   if (shown !== ".") steps.push(`cd ${shown}`);
   if (!installed) steps.push(`${manager} install`);
-  steps.push(`${runScriptCommand(manager, "typecheck")}    type-checks main.ts and the native files`);
-  steps.push(`${runScriptCommand(manager, "start")}            builds the addons on the first run, then runs main.ts`);
+  steps.push(`${runScriptCommand(manager, "typecheck")}    type-checks src/main.ts and the native files`);
+  steps.push(`${runScriptCommand(manager, "start")}            builds the addons on the first run, then runs src/main.ts`);
   if (ide === "vscode") {
     steps.push("");
     // Lines under 70 characters: the note wraps at the terminal width, and a wrapped line reads as
@@ -112,8 +112,8 @@ async function main(): Promise<number> {
     steps.push("and C/C++.");
     steps.push('Run "TypeScript: Select TypeScript Version…" from the command palette');
     steps.push('and pick "Use Workspace Version" (once per folder).');
-    if (process.platform === "win32") steps.push("Press F5 to debug main.ts and the native code together.");
-    else steps.push("Press F5 to debug main.ts. The dropdown also has", '"Debug TypeScript + native", not yet tried on this OS.');
+    if (process.platform === "win32") steps.push("Press F5 to debug src/main.ts and the native code together.");
+    else steps.push("Press F5 to debug src/main.ts. The dropdown also has", '"Debug TypeScript + native", not yet tried on this OS.');
   }
   p.note(steps.join("\n"), "Next steps");
   p.outro("Done.");
