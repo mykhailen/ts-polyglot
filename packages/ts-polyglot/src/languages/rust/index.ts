@@ -7,11 +7,11 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../../parser.ts";
-import { oneLine, toLegacy, type LegacyFunction, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../../signatures.ts";
+import { oneLine, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
 import { rustType } from "./types.ts";
 
-export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", functions: rustFunctions };
+export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: "tree-sitter-rust.wasm", parse: rustModule };
 
 // tree-sitter-rust has two comment nodes where the C grammars have one.
 const COMMENTS = ["line_comment", "block_comment"];
@@ -29,11 +29,6 @@ export function rustModule(root: Node, source: string): NativeModule {
     if (fn) functions.push(fn);
   });
   return { functions, structs: structs.all };
-}
-
-/** Today's output, until the registry reads the module itself. */
-export function rustFunctions(root: Node, source: string): LegacyFunction[] {
-  return rustModule(root, source).functions.map(toLegacy).filter((fn) => fn !== undefined);
 }
 
 /** Calls `each` with every item of the file and of the modules the wrapper can reach, with the module path. */

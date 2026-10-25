@@ -7,7 +7,7 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../parser.ts";
-import { oneLine, toLegacy, type LegacyFunction, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../signatures.ts";
+import { oneLine, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../signatures.ts";
 import { cType } from "./c-types.ts";
 
 /** C spells a struct `struct tag`; C++ spells it by its qualified name, and warns when `struct` names a `class`. */
@@ -31,11 +31,6 @@ export function cFamilyModule(root: Node, source: string, dialect: Dialect): Nat
     if (fn) functions.push(fn);
   });
   return { functions, structs: structs.all };
-}
-
-/** Today's output, until the registry reads the module itself. */
-export function cFamilyFunctions(root: Node, source: string): LegacyFunction[] {
-  return cFamilyModule(root, source, "cpp").functions.map(toLegacy).filter((fn) => fn !== undefined);
 }
 
 /** Calls `each` with every declaration-level node and the namespaces around it, descending the containers. */

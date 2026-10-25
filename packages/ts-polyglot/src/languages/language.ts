@@ -1,10 +1,9 @@
 // What a language module gives the rest of the package: which files it owns, which grammar parses
-// them, and how to read the exportable functions off a syntax tree. The build half (toolchain, glue
-// shape) isn't part of this yet: build.ts still branches on the language until the marshaling design
-// says what a language has to provide there.
+// them, and how to read the functions and plain structs off a syntax tree. The build half (the
+// bridge that lowers a language's functions to C-ABI callees) joins once the glue reads the model.
 import type { Node } from "web-tree-sitter";
 
-import type { LegacyFunction } from "../signatures.ts";
+import type { NativeModule } from "../signatures.ts";
 
 export type Language = "c" | "cpp" | "rust";
 
@@ -14,6 +13,6 @@ export interface LanguageModule {
   extensions: readonly string[];
   /** A file under grammars/: the manifest's `asset`. */
   grammar: string;
-  /** The exportable functions in a parsed file, in source order, same-named duplicates included. */
-  functions(root: Node, source: string): LegacyFunction[];
+  /** Every plain struct and every function the visitation rules reach, typed, in source order, same-named functions included; the registry filters. */
+  parse(root: Node, source: string): NativeModule;
 }

@@ -1,8 +1,9 @@
-// The registry: which module owns a file, and the two steps around a module's walker. Loading is
+// The registry: which module owns a file, and the steps around a module's walker. Loading is
 // asynchronous and happens once per language; parsing is synchronous, so the runtime hook can call
-// it from its resolve.
+// it from its resolve. `parseModule` applies `supported` here, so a walker records what a type is and
+// the registry decides what the glue can carry.
 import { loadGrammar, parse } from "../parser.ts";
-import type { LegacyFunction } from "../signatures.ts";
+import { supported, toLegacy, type LegacyFunction, type NativeModule } from "../signatures.ts";
 import { c } from "./c.ts";
 import { cpp } from "./cpp.ts";
 import type { Language, LanguageModule } from "./language.ts";
@@ -19,7 +20,7 @@ export function languageOf(fileName: string): Language | undefined {
   return languages.find((language) => language.extensions.includes(extension))?.id;
 }
 
-function moduleFor(language: Language): LanguageModule {
+export function languageModule(language: Language): LanguageModule {
   const found = languages.find((candidate) => candidate.id === language);
   if (!found) throw new Error(`ts-polyglot: no language module for ${language}`);
   return found;
@@ -27,20 +28,44 @@ function moduleFor(language: Language): LanguageModule {
 
 /** Loads the language's grammar; a no-op after the first time. */
 export function loadLanguage(language: Language): Promise<void> {
-  return loadGrammar(moduleFor(language).grammar);
+  return loadGrammar(languageModule(language).grammar);
 }
 
-/** The functions a file exports. The language must have been loaded. */
-export function findFunctions(source: string, language: Language): LegacyFunction[] {
-  const module = moduleFor(language);
+/** The walker's raw output for a file. The language must have been loaded. */
+function walk(source: string, language: Language): NativeModule {
+  const module = languageModule(language);
   const tree = parse(module.grammar, source);
-  let found: LegacyFunction[];
   try {
-    found = module.functions(tree.rootNode, source);
+    return module.parse(tree.rootNode, source);
   } finally {
     tree.delete();
   }
-  // A C++ overload, a duplicate, or the same name in two preprocessor branches: the first one wins.
+}
+
+/**
+ * What the glue and the mapper work from: the structs whose fields all cross, then the functions whose
+ * parameters and result do. A C++ overload, a duplicate, or the same name in two preprocessor
+ * branches: the first supported one wins, so an unsupported first overload doesn't hide a usable second.
+ */
+export function parseModule(source: string, language: Language): NativeModule {
+  const raw = walk(source, language);
+  // A struct is only as supported as its fields, which may be structs themselves.
+  const module: NativeModule = { functions: [], structs: raw.structs.filter((struct) => struct.fields.every((field) => supported(field.type, raw))) };
   const seen = new Set<string>();
-  return found.filter((fn) => !seen.has(fn.name) && seen.add(fn.name));
+  module.functions = raw.functions.filter((fn) => [fn.returns, ...fn.params.map((param) => param.type)].every((type) => supported(type, module)) && !seen.has(fn.name) && seen.add(fn.name));
+  return module;
+}
+
+/** Today's shape for today's glue and mapper: the walker's output through `toLegacy`, the first of each name. */
+export function findFunctions(source: string, language: Language): LegacyFunction[] {
+  const seen = new Set<string>();
+  const legacy: LegacyFunction[] = [];
+  for (const fn of walk(source, language).functions) {
+    const converted = toLegacy(fn);
+    if (converted && !seen.has(converted.name)) {
+      seen.add(converted.name);
+      legacy.push(converted);
+    }
+  }
+  return legacy;
 }
