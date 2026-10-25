@@ -7,8 +7,8 @@ import { add } from "./add.cpp"; // extern "C" int add(int a, int b)
 add(1, 2); // 3, typed as (a: number, b: number) => number
 ```
 
-Early stage: numbers and booleans only. Tested on Windows and Linux; macOS support is written but not
-yet verified. Requires TypeScript 7.1 (beta) and Node 22.18+.
+Early stage: numbers, booleans, strings and plain structs. Tested on Windows and Linux; macOS support
+is written but not yet verified. Requires TypeScript 7.1 (beta) and Node 22.18+.
 
 ## Use it in a project
 
@@ -90,12 +90,21 @@ Both halves read signatures with the same parser: tree-sitter, through one modul
 
 | Language | Functions | Types |
 | --- | --- | --- |
-| C, C++ | definitions that aren't `static`, at the top level, inside `extern "C" { }` blocks or inside named namespaces; attributes, `constexpr`, `noexcept`, trailing return types, default arguments (still required in TypeScript), `__declspec(dllexport)` and `__cdecl` are fine | `int`, `unsigned`, `short`, `long`, `long long`, `(u)intN_t`, `float`, `double`, `bool`, `void` |
-| Rust | `pub fn`, `pub extern "C" fn` and `pub const fn`, at the top level or inside `pub mod`s | `i8`–`i64`, `u8`–`u32`, `f32`, `f64`, `bool`, `()` |
+| C, C++ | definitions that aren't `static`, at the top level, inside `extern "C" { }` blocks or inside named namespaces; attributes, `constexpr`, `noexcept`, trailing return types, default arguments (still required in TypeScript), `__declspec(dllexport)` and `__cdecl` are fine | every integer type (`char` to `unsigned long long`, the `(u)intN_t`s, `size_t`), `float`, `double`, `bool`, `void`; `const char*` (typed `string \| null`), `std::string`, `const std::string&`, `std::string_view`; plain structs (public data members only, defined in the same file), by value or by `const&` |
+| Rust | `pub fn`, `pub extern "C" fn` and `pub const fn`, at the top level or inside `pub mod`s | `i8`–`i64`, `isize`, `u8`–`u64`, `usize`, `f32`, `f64`, `bool`, `char`, `()`; `&str`, `String`, `&String`, `&'static str`; plain `pub struct`s with `pub` fields, by value or by `&` |
 
 Everything else is skipped, so importing it is a "has no exported member" error in TypeScript. That
-includes pointers, references, strings, structs, templates and generics, overloads past the first,
-`unsafe` and `async` functions, and class methods. A half-typed file keeps its intact functions.
+includes other pointers, mutable references, arrays, templates and generics, overloads past the
+first, `unsafe` and `async` functions, class methods, and a struct with any of those in it. A
+half-typed file keeps its intact functions.
+
+**How values cross.** Integers up to 32 bits and floats are `number`s. 64-bit integers (`long`,
+`int64_t`, `size_t`, `i64`, `usize`, …) are `bigint` results and `number | bigint` parameters. A wrong
+JavaScript type is a `TypeError`; a value that doesn't fit the native type (`1.5` or `2 ** 40` for an
+`int`, `-1` for an unsigned, a NUL inside a `const char*`) is a `RangeError`, with the limits in the
+message. Strings are UTF-8 both ways. A struct is an object with the struct's fields, every one
+required; extra properties are ignored. A C++ exception or a Rust panic becomes an `Error` with its
+message.
 
 ## Limits
 
@@ -105,8 +114,12 @@ includes pointers, references, strings, structs, templates and generics, overloa
 - Headers a C file includes are not part of the cache key. After editing a header, delete the cache.
 - An unknown macro before a function's return type (`MYAPI int f(int)`) hides the function: the
   parser reads the file with tree-sitter and doesn't expand macros.
-- `long`, `long long`, `int64_t` and `i64` become JavaScript numbers, so values above 2^53 lose
-  precision. `unsigned long` is skipped: 64-bit unsigned values aren't supported yet.
+- Struct definitions come from the same file: `#include`, `mod x;` and `use` aren't followed, so a
+  function that uses a struct from a header is skipped.
+- A `const char*` a function returns is copied and never freed, so the function has to keep it
+  alive; NULL comes back as `null`. A non-const `char*` isn't supported yet.
+- `long` is 32 bits wide on Windows and 64 elsewhere. Its TypeScript type is `bigint` everywhere;
+  the glue checks the real width, so a value past 2^31 is a `RangeError` on Windows.
 - The runtime hook compiles and loads native code from any imported `.c`, `.cpp` or `.rs` file.
   Only use it with code you trust.
 - `TS_POLYGLOT_DEBUG=1` builds unoptimized addons with debug info for a native debugger: `.pdb`

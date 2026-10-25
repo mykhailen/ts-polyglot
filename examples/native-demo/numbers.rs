@@ -15,6 +15,11 @@ pub fn is_prime(n: u32) -> bool {
 // Not `pub`, so not exported.
 fn unused_helper() {}
 
+// A 64-bit integer arrives as a number or a bigint and a String leaves as a JavaScript string.
+pub fn describe(n: i64) -> String {
+    format!("{n} is {}", if n % 2 == 0 { "even" } else { "odd" })
+}
+
 // A `pub fn` inside a `pub mod` exports too, under its own name: `import { clamp }`.
 pub mod stats {
     pub fn clamp(x: i32, lo: i32, hi: i32) -> i32 {

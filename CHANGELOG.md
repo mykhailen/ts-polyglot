@@ -13,11 +13,28 @@ release notes ([docs/releasing.md](docs/releasing.md)).
   inside `extern "C" { }` blocks, named namespaces and Rust `pub mod`s, exported under their own
   name; functions with attributes, `constexpr`, `noexcept`, a trailing return type or default
   arguments; `pub const fn`. A half-typed file keeps its intact functions, so the editor's types
-  don't vanish while you type. Still skipped: pointers, references, strings, structs, templates and
-  generics, overloads past the first, `unsafe` and `async` functions, and a function behind an
-  unknown macro.
+  don't vanish while you type. Still skipped: pointers other than `const char*`, mutable references,
+  arrays, templates and generics, overloads past the first, `unsafe` and `async` functions, and a
+  function behind an unknown macro.
 - The runtime hook preloads the grammars at `--import` time, about 25 ms; the type side loads one
   the first time it sees a file of that language.
+- Strings cross, as UTF-8 both ways: `const char*` (typed `string | null`; a NUL inside is a
+  `RangeError`), `std::string`, `const std::string&`, `std::string_view`, `&str`, `String` and
+  `&'static str`. A returned `const char*` is copied and never freed.
+- Plain structs cross by value, nested, as exported `interface`s with the struct's field names: C and
+  C++ `struct`s and `class`es with only public data members, Rust `pub struct`s with `pub` fields,
+  defined in the same file. Rust needs no `#[repr(C)]`. A missing field is a `TypeError` naming it.
+- Every C and Rust integer type: `char`, `short`, `long`, `unsigned long`, `size_t`, the `(u)intN_t`s,
+  `i8` to `i64`, `u8` to `u64`, `isize` and `usize`; `float` and `f32`; Rust `char` as a one-character
+  string.
+- **Behavior change:** 64-bit integers are `bigint` results and `number | bigint` parameters:
+  `fib(50)` is `12586269025n`. The TypeScript type is the same on every OS; the glue checks the real
+  width, so on Windows a `long` past 32 bits is a `RangeError`.
+- **Behavior change:** conversions are strict. A wrong JavaScript type is a `TypeError`; a value that
+  doesn't fit (`1.5` or `2 ** 40` for an `int`, `-1` for an unsigned) is a `RangeError`, with the
+  limits in the message. Before, they were truncated or wrapped silently.
+- A C++ exception and a Rust panic become a JavaScript `Error` carrying the message, instead of
+  ending the process.
 
 ### 0.2.0 (2026-10-23)
 
@@ -49,7 +66,8 @@ First release.
 
 - The template keeps its sources in `src/`: `main.ts` and the native files it imports. The `start`
   script and the launch configurations point there.
-- The template asks for ts-polyglot 0.3.0.
+- The template asks for ts-polyglot 0.3.0, and its README says what crosses now: numbers, booleans,
+  strings and plain structs.
 
 ### 0.2.0 (2026-10-23)
 

@@ -47,7 +47,7 @@ launches the node that ran `npm create`; `.vscode/launch.json` says where to cha
 
 ## Next
 
-Add a `.c`, `.cpp` or `.rs` file and import it. Functions that take and return numbers and booleans
-are exported, at the top level or inside `extern "C" { }` blocks, namespaces and `pub mod`s;
+Add a `.c`, `.cpp` or `.rs` file and import it. Functions that take and return numbers, booleans,
+strings and plain structs are exported, at the top level or inside `extern "C" { }` blocks, namespaces and `pub mod`s;
 `static` C functions and non-`pub` Rust functions stay private. The extensions ts-polyglot handles
 are listed under `contentMappers` in `tsconfig.json`.

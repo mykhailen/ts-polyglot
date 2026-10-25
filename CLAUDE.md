@@ -28,14 +28,16 @@ setup), none of which is written down anywhere else.
 
 | Path | What |
 | --- | --- |
-| `packages/ts-polyglot/src/signatures.ts` | the shared shapes: `NativeFunction`, `Param`, `Kind` and the `Kind` constants |
-| `packages/ts-polyglot/src/languages/` | one module per language behind `LanguageModule` (`id`, `extensions`, `grammar`, `functions(root, source)`): `c.ts` and `cpp.ts` share the walker in `c-family.ts`, `rust/` has its walker and the wrapper-crate build; `index.ts` is the registry (`languageOf`, `loadLanguage`, `findFunctions`) and where a language is registered |
+| `packages/ts-polyglot/src/signatures.ts` | the model: `NativeType` (a discriminated union, the spelling kept on every node for the bridges), `NativeStruct`, `NativeFunction`, `NativeModule`, and `supported`, the one predicate that says what the glue marshals |
+| `packages/ts-polyglot/src/languages/` | one module per language behind `LanguageModule` (`id`, `extensions`, `grammar`, `parse(root, source)`, `glue`, `bridge(input)`): `c.ts` and `cpp.ts` share the walker in `c-family.ts` and the type table in `c-types.ts`, and each has its bridge (C calls the user's function directly; C++ through a static shim per function that catches exceptions and converts `std::string`, mirroring structs that hold one); `rust/` has its walker, `types.ts` and the wrapper-crate bridge in `bridge.ts` (`catch_unwind`, `#[repr(C)]` mirrors); `index.ts` is the registry (`languageOf`, `loadLanguage`, `parseModule`, `findFunctions`) and where a language is registered. `language.ts` defines the interface and the C-ABI vocabulary (`Bridge`, `Callee`, `AbiType`) |
+| `packages/ts-polyglot/src/marshal.ts` | the shared half that knows types but no language: `jsType`, the ABI header (`ts_polyglot_string`), the C helpers that read a JavaScript value strictly and make one back, and the struct readers and makers |
+| `packages/ts-polyglot/src/glue.ts` | the Node-API translation unit from a module and its bridge (one wrapper per function: read, call, check the error slot, make, clean up) and the `.mjs` that loads the addon |
 | `packages/ts-polyglot/src/parser.ts` | web-tree-sitter: loads a grammar from `grammars/` once per process; parsing is synchronous |
 | `packages/ts-polyglot/grammars/` | the vendored tree-sitter `.wasm` grammars, `manifest.json` (repository, tag, SHA-256) and each grammar's LICENSE; `npm run grammars -- check` verifies them, `update <id> [tag]` re-pins one from its GitHub release |
 | `packages/ts-polyglot/src/declarations.ts` | the virtual TypeScript and span mappings returned by `transform` |
 | `packages/ts-polyglot/src/mapper.ts` | the content mapper process (JSON-RPC over stdio) |
 | `packages/ts-polyglot/src/protocol.ts` | the protocol types it uses |
-| `packages/ts-polyglot/src/build.ts` | Node-API glue generation and the addon cache; the Rust wrapper crate and static library come from `languages/rust/build.ts` |
+| `packages/ts-polyglot/src/build.ts` | the addon cache: the key, the directory, and the sequence bridge → glue → toolchain |
 | `packages/ts-polyglot/src/compiler.ts` | picks the compiler for a file: `CC`/`CXX`, the `"ts-polyglot"` field in package.json, or the platform default; spawns nothing |
 | `packages/ts-polyglot/src/toolchain.ts` | the build commands: MSVC (`vswhere`, `vcvars64.bat`, the Node-API import library) and gcc/clang on Linux and macOS |
 | `packages/ts-polyglot/src/register.ts` | loads every grammar (a top-level await, which `--import` waits for), then installs the synchronous Node resolve hook: an import of a native file resolves to the generated module in the cache |
@@ -131,10 +133,11 @@ them unbound.
 - **Bump `GLUE_VERSION` in `build.ts`** whenever the generated C, C++, Rust or JavaScript, or the
   compiler flags, change, so cached addons rebuild.
 - **Adding a language:** `npm run grammars -- update <id> <tag> <owner/name>` pins its grammar; a
-  module under `src/languages/` implements `LanguageModule` and joins `languages` in `index.ts`; a
-  `test/<id>.test.ts` pins its walker. The build half (toolchain, glue) is still shared code in
-  `build.ts` and `toolchain.ts`, with Rust's wrapper crate in `languages/rust/build.ts`, until the
-  marshaling design says what a language provides there.
+  module under `src/languages/` implements `LanguageModule` (`parse`: the walker, producing a
+  `NativeModule` of typed functions and plain structs; `bridge`: what lowers them to C-ABI callees
+  the glue can call, see `language.ts`) and joins `languages` in `index.ts`; a `test/<id>.test.ts`
+  pins its walker and `test/bridges.test.ts` the text its bridge emits. The glue generator and the
+  toolchain are shared and never learn a language's idioms.
 - **Mapper rules** (details in the docs):
   - Verbatim spans must be identical text on both sides.
   - `transform` diagnostics stop all type checking, so don't use them for "unsupported, skipped".
@@ -148,8 +151,12 @@ them unbound.
    file, once item 2 produces diagnostics.
 2. **Compile errors in `tsc` and the editor.** Run a syntax-only compile in `transform` and return
    the errors as mapper diagnostics. Accept that they block type checking, the same as syntax errors.
-3. **More types:** strings (`const char*`, `&str`/`String`), buffers and pointers, structs, and
-   `bigint` for 64-bit values.
+3. **More types.** Strings, plain structs, every C and Rust integer type and `bigint` for 64-bit
+   values landed in 0.3.0 (docs/superpowers/specs/2026-10-25-types-and-marshaling-design.md). Still
+   to do, roughly in order of expected demand: arrays, vectors, slices and `Uint8Array` buffers;
+   `Option<T>` and `std::optional<T>`; enums and unions; out-parameters through `&mut T` and `T*`;
+   following `use`, `using` and `#include` for struct definitions; wide strings (`wchar_t`,
+   `char16_t`, `std::wstring`); 128-bit integers; classes with methods and `impl` blocks.
 4. **More toolchains:** MinGW gcc and clang-cl on Windows (they need a per-OS `compiler` setting,
    because one committed value would mean different things on different OSes), and Windows on arm64.
 5. **Releasing.** Both packages have been on npm since 2026-10-23 (0.1.0, published by hand).
