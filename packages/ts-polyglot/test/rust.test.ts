@@ -3,9 +3,16 @@ import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
 import { findFunctions, languageOf, loadLanguage } from "../src/languages/index.ts";
+import { rustModule } from "../src/languages/rust/index.ts";
+import { rustType } from "../src/languages/rust/types.ts";
+import { parse } from "../src/parser.ts";
+import type { NativeType } from "../src/signatures.ts";
 
 before(() => loadLanguage("rust"));
 const find = (source: string) => findFunctions(source, "rust");
+// The raw walker, before the registry filters: these tests want everything it sees.
+const module = (source: string) => { const tree = parse("tree-sitter-rust.wasm", source); try { return rustModule(tree.rootNode, source); } finally { tree.delete(); } };
+const types = (source: string) => module(source).functions[0]!.params.map((p) => p.type);
 
 test(".rs files are Rust", () => {
   assert.equal(languageOf("x.rs"), "rust");
@@ -68,4 +75,53 @@ test("comments between parameters don't hide the function", () => {
   const [fn] = find(source);
   assert.deepEqual(fn?.params.map((p) => p.name), ["width", "height"]);
   assert.equal(fn?.signature, "pub fn configure(width: u32, height: u32,) -> bool");
+});
+
+// The structured types and plain structs of the marshaling design, straight off the walker.
+test("integer, float, bool and char spellings carry their class and C twin", () => {
+  const found = types("pub fn f(a: i8, b: u16, c: i64, d: usize, e: isize, g: f32, h: bool, i: char) {}");
+  assert.deepEqual(found.map((t) => [t.kind, (t as { bits?: number }).bits, (t as { signed?: boolean }).signed, t.spelling]), [["int", 8, true, "i8"], ["int", 16, false, "u16"], ["int", 64, true, "i64"], ["int", 64, false, "usize"], ["int", 64, true, "isize"], ["float", 32, undefined, "f32"], ["bool", undefined, undefined, "bool"], ["char", undefined, undefined, "char"]]);
+  assert.deepEqual(rustType("isize"), { type: { kind: "int", bits: 64, signed: true, spelling: "isize" }, c: "intptr_t", min: "INTPTR_MIN", max: "INTPTR_MAX" });
+  assert.equal(rustType("i128"), undefined);
+});
+
+test("&str, String, &String and &'static str are strings, behind references or not", () => {
+  const [fn] = module("pub fn f(a: &str, b: String, c: &String, d: &mut String, e: std::string::String) -> &'static str { \"\" }").functions;
+  assert.deepEqual(fn!.params.map((p) => p.type.kind === "reference" ? [p.type.mutable, p.type.to.kind, p.type.spelling] : [p.type.kind, p.type.spelling]), [[false, "string", "&str"], ["string", "String"], [false, "string", "&String"], [true, "string", "&mut String"], ["string", "std::string::String"]]);
+  assert.deepEqual(fn!.returns, { kind: "reference", mutable: false, to: { kind: "string", nullable: false, spelling: "str" }, spelling: "&'static str" });
+});
+
+test("a reference result without an explicit 'static lifetime is unknown", () => {
+  const { functions } = module("pub fn e(s: &str) -> &str { s }\npub fn n<'a>(s: &'a str) -> &'a str { s }\n");
+  assert.deepEqual(functions.map((f) => [f.name, f.returns.kind, f.returns.spelling]), [["e", "unknown", "&str"]]); // n is skipped by its lifetime parameter, as before
+});
+
+test("generics, tuples, arrays, slices, raw pointers and &mut have their kinds", () => {
+  const found = types("pub fn f(a: Option<i32>, b: (i32, i32), c: [u8; 4], d: &[u8], e: *const u8, g: &mut i32) {}");
+  assert.deepEqual(found.map((t) => t.kind), ["unknown", "unknown", "array", "reference", "pointer", "reference"]);
+  assert.equal((found[2] as { length?: number }).length, 4);
+  assert.equal((found[3] as { to: NativeType }).to.kind, "array");
+  assert.deepEqual([(found[4] as { const: boolean }).const, (found[5] as { mutable: boolean }).mutable], [true, true]);
+});
+
+test("plain structs: pub fields with offsets, module paths and the wrapper's spelling", () => {
+  const source = "#[derive(Debug)]\npub struct Point { pub x: i32, pub y: i64 }\npub mod geo { pub struct V { pub dx: f32 } }\n";
+  const { structs } = module(source);
+  assert.deepEqual(structs.map((s) => [s.name, s.spelling, s.path, s.fields.map((f) => [f.name, f.type.spelling])]), [["Point", "user::Point", [], [["x", "i32"], ["y", "i64"]]], ["V", "user::geo::V", ["geo"], [["dx", "f32"]]]]);
+  assert.equal(structs[0]!.nameStart, source.indexOf("Point"));
+  assert.equal(structs[0]!.fields[1]!.nameStart, source.indexOf("y:"));
+});
+
+test("structs that aren't plain: a private or pub(crate) field, tuple, unit, generic, lifetime, non-pub", () => {
+  assert.deepEqual(module("pub struct A { x: i32 }\npub struct B { pub(crate) x: i32 }\npub struct C(i32);\npub struct D;\npub struct E<T> { pub t: T }\npub struct F<'a> { pub s: &'a str }\nstruct G { pub x: i32 }\npub(crate) struct H { pub x: i32 }\n").structs, []);
+});
+
+test("struct names resolve in the function's module, by relative path, crate:: and super::", () => {
+  const { functions } = module("pub struct P { pub x: i32 }\npub mod geo { pub struct V { pub x: f32 } pub fn n(v: V) -> V { v } pub mod deep { pub fn d(v: super::V, p: crate::P) -> i32 { 0 } } }\npub fn m(v: geo::V, w: crate::geo::V) -> i32 { 0 }\npub fn bare(v: V) -> i32 { 0 }\n");
+  assert.deepEqual(functions.map((f) => [f.name, ...f.params.map((p) => p.type.kind === "struct" ? p.type.name : p.type.kind)]), [["n", "V"], ["d", "V", "P"], ["m", "V", "V"], ["bare", "unknown"]]);
+});
+
+test("the legacy adapter still gives today's shape", () => {
+  const [fn] = find("pub fn fib(n: u32) -> i64 { 0 }");
+  assert.deepEqual([fn?.returnType, fn?.returns.rust, fn?.params[0]?.type], ["i64", "i64", "u32"]);
 });
