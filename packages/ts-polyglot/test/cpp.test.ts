@@ -3,10 +3,14 @@
 import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
+import { cFamilyModule } from "../src/languages/c-family.ts";
 import { findFunctions, loadLanguage } from "../src/languages/index.ts";
+import { parse } from "../src/parser.ts";
 
 before(() => loadLanguage("cpp"));
 const find = (source: string) => findFunctions(source, "cpp");
+const module = (source: string) => { const tree = parse("tree-sitter-cpp.wasm", source); try { return cFamilyModule(tree.rootNode, source, "cpp"); } finally { tree.delete(); } };
+const types = (source: string) => module(source).functions[0]!.params.map((p) => p.type);
 
 test('extern "C" in both forms', () => {
   const found = find('extern "C" int one(int a) { return a; }\nextern "C" {\n  int two(int a) { return a; }\n}\n');
@@ -54,4 +58,33 @@ test("a class method is not a function, its neighbor is", () => {
 
 test("a half-typed C++ file keeps the functions before the break", () => {
   assert.deepEqual(find("namespace n { int ok(int a) { return a; } }\nint partial(int a,").map((f) => f.callee), ["n::ok"]);
+});
+
+// The C++-only parts of the structured types and plain structs.
+test("const references are immutable references to their target; && and non-const are mutable", () => {
+  const found = types("int f(const int& a, int& b, const std::string& s, std::string&& r) { return 0; }");
+  assert.deepEqual(found.map((t) => t.kind === "reference" && [t.mutable, t.to.kind, t.spelling]), [[false, "int", "const int&"], [true, "int", "int&"], [false, "string", "const std::string&"], [true, "string", "std::string&&"]]);
+});
+
+test("std::string and std::string_view are strings; a bare string is unknown", () => {
+  const [fn] = module("std::string f(std::string a, std::string_view b, string c) { return a; }").functions;
+  assert.deepEqual(fn!.params.map((p) => p.type), [{ kind: "string", nullable: false, spelling: "std::string" }, { kind: "string", nullable: false, spelling: "std::string_view" }, { kind: "unknown", spelling: "string" }]);
+  assert.equal(fn!.returns.kind, "string");
+});
+
+test("classes are plain only when every data member is public, with no methods, bases, templates or nested types", () => {
+  const { structs } = module("class Open { public: int w; };\nclass Box { public: int w; private: int s; };\nstruct M { int x; void f(); };\nstruct C { int x; C(); };\nstruct D : Open { int z; };\ntemplate <typename T> struct G { T t; };\nstruct N { struct In { int a; } in; };\nstruct WithInit { int x = 0; static int count; };\n");
+  assert.deepEqual(structs.map((s) => [s.name, s.fields.map((f) => f.name)]), [["Open", ["w"]], ["WithInit", ["x"]]]);
+});
+
+test("struct names resolve innermost namespace out, then qualified; the spelling is qualified", () => {
+  const { functions, structs } = module("namespace geometry { struct Vec { float dx; float dy; }; Vec norm(const Vec& v) { return v; } }\ngeometry::Vec scale(geometry::Vec v) { return v; }\nint bare(Vec v) { return 0; }\n");
+  assert.deepEqual(structs.map((s) => [s.name, s.spelling, s.path]), [["Vec", "geometry::Vec", ["geometry"]]]);
+  assert.deepEqual(functions.map((f) => [f.name, f.params[0]!.type.kind, f.returns.kind]), [["norm", "reference", "struct"], ["scale", "struct", "struct"], ["bare", "unknown", "int"]]);
+});
+
+test("two structs with one name: the first wins and the second's scope resolves to unknown", () => {
+  const { functions, structs } = module("namespace a { struct P { int x; }; P fa(P p) { return p; } }\nnamespace b { struct P { double y; }; P fb(P p) { return p; } }\n");
+  assert.deepEqual(structs.map((s) => s.spelling), ["a::P"]);
+  assert.deepEqual(functions.map((f) => [f.name, f.params[0]!.type.kind]), [["fa", "struct"], ["fb", "unknown"]]);
 });

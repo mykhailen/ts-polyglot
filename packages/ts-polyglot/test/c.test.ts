@@ -3,10 +3,16 @@
 import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
+import { cFamilyModule } from "../src/languages/c-family.ts";
+import { cType } from "../src/languages/c-types.ts";
 import { findFunctions, languageOf, loadLanguage } from "../src/languages/index.ts";
+import { parse } from "../src/parser.ts";
 
 before(() => loadLanguage("c"));
 const find = (source: string) => findFunctions(source, "c");
+// The raw walker, before the registry filters: these tests want everything it sees.
+const module = (source: string) => { const tree = parse("tree-sitter-c.wasm", source); try { return cFamilyModule(tree.rootNode, source, "c"); } finally { tree.delete(); } };
+const types = (source: string) => module(source).functions[0]!.params.map((p) => p.type);
 
 test("languageOf ignores case and knows the three languages", () => {
   assert.equal(languageOf("ADD.CPP"), "cpp");
@@ -105,4 +111,71 @@ test("a BOM doesn't hide the first function or shift offsets", () => {
   const [fn] = find(source);
   assert.equal(fn?.name, "add");
   assert.equal(fn?.nameStart, source.indexOf("add"));
+});
+
+// The structured types and plain structs of the marshaling design, straight off the walker.
+test("integer spellings carry width, signedness and the C type's limits", () => {
+  const found = types("int f(char a, unsigned char b, short c, unsigned d, long e, unsigned long g, long long h, int8_t i, uint64_t j, size_t k, intptr_t l) { return 0; }");
+  assert.deepEqual(found.map((t) => t.kind === "int" && [t.bits, t.signed, t.spelling]), [[8, true, "char"], [8, false, "unsigned char"], [16, true, "short"], [32, false, "unsigned"], [64, true, "long"], [64, false, "unsigned long"], [64, true, "long long"], [8, true, "int8_t"], [64, false, "uint64_t"], [64, false, "size_t"], [64, true, "intptr_t"]]);
+  assert.deepEqual(cType("long"), { type: { kind: "int", bits: 64, signed: true, spelling: "long" }, c: "long", min: "LONG_MIN", max: "LONG_MAX" });
+  assert.deepEqual(cType("size_t"), { type: { kind: "int", bits: 64, signed: false, spelling: "size_t" }, c: "size_t", min: "0", max: "SIZE_MAX" });
+});
+
+test("spellings normalize by keyword set", () => {
+  assert.deepEqual(cType("long int"), cType("long"));
+  assert.deepEqual(cType("int long"), cType("long"));
+  assert.deepEqual(cType("signed int"), cType("int"));
+  assert.deepEqual(cType("unsigned"), cType("unsigned int"));
+  assert.deepEqual(cType("std::size_t"), cType("size_t"));
+  assert.notDeepEqual(cType("signed char"), cType("char"));
+  assert.equal(types("int f(long int x) { return 0; }")[0]!.spelling, "long int");
+});
+
+test("floats, bool, void and char", () => {
+  const { functions } = module("void f(float a, double b, bool c, _Bool d) {}");
+  assert.deepEqual(functions[0]!.params.map((p) => p.type.kind), ["float", "float", "bool", "bool"]);
+  assert.equal((functions[0]!.params[0]!.type as { bits: number }).bits, 32);
+  assert.equal(functions[0]!.returns.kind, "void");
+});
+
+test("one pointer level around const char is a nullable string; other pointers stay pointers", () => {
+  const found = types("int f(const char* s, char const* t, char* u, const char** v, const int* w) { return 0; }");
+  assert.deepEqual(found.map((t) => t.kind), ["string", "string", "pointer", "pointer", "pointer"]);
+  assert.deepEqual(found[0], { kind: "string", nullable: true, spelling: "const char*" });
+  assert.equal((found[2] as { const: boolean }).const, false);
+  assert.equal((found[4] as { const: boolean }).const, true);
+});
+
+test("array parameters and pointer results have their own kinds", () => {
+  const [fn] = module("int* p(int a[4], int b[]) { return 0; }").functions;
+  assert.equal(fn!.returns.kind, "pointer");
+  assert.deepEqual(fn!.params.map((p) => p.type.kind === "array" && p.type.length), [4, undefined]);
+});
+
+test("plain structs in their three forms, with fields, offsets and the glue's spelling", () => {
+  const source = "struct Point { int x; int y; };\ntypedef struct { float a, b; } Pair;\ntypedef struct tag { long v; } Tagged;\n";
+  const { structs } = module(source);
+  assert.deepEqual(structs.map((s) => [s.name, s.spelling, s.fields.map((f) => [f.name, f.type.kind])]), [["Point", "struct Point", [["x", "int"], ["y", "int"]]], ["Pair", "Pair", [["a", "float"], ["b", "float"]]], ["Tagged", "Tagged", [["v", "int"]]]]);
+  assert.equal(structs[0]!.nameStart, source.indexOf("Point"));
+  assert.equal(structs[1]!.nameStart, source.indexOf("Pair"));
+  assert.equal(structs[1]!.fields[1]!.nameStart, source.indexOf("b;"));
+});
+
+test("struct types resolve by tag and by typedef name", () => {
+  const { functions, structs } = module("struct Point { int x; };\ntypedef struct { int y; } Pair;\nstruct Point f(struct Point p, Pair q) { return p; }\nint g(struct Missing m) { return 0; }\n");
+  assert.deepEqual(functions[0]!.params.map((p) => p.type), [{ kind: "struct", name: "Point", spelling: "struct Point" }, { kind: "struct", name: "Pair", spelling: "Pair" }]);
+  assert.deepEqual(functions[0]!.returns, { kind: "struct", name: "Point", spelling: "struct Point" });
+  assert.deepEqual(functions[1]!.params[0]!.type, { kind: "unknown", spelling: "struct Missing" });
+  assert.equal(structs.length, 2);
+});
+
+test("a struct with a bitfield isn't plain; one with a pointer field is plain but typed as such", () => {
+  const { structs } = module("struct Bits { int x : 3; };\nstruct Ptr { const char* name; int* p; int a[2]; };\n");
+  assert.deepEqual(structs.map((s) => s.name), ["Ptr"]);
+  assert.deepEqual(structs[0]!.fields.map((f) => f.type.kind), ["string", "pointer", "array"]);
+});
+
+test("the legacy adapter still gives today's shape", () => {
+  const [fn] = find("long f(unsigned x) { return x; }");
+  assert.deepEqual([fn?.returnType, fn?.returns.c, fn?.params[0]?.type, fn?.params[0]?.kind.ts], ["long", "int64_t", "unsigned", "number"]);
 });
