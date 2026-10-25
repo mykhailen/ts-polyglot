@@ -30,6 +30,11 @@ std::string repeat(std::string s, int n) {
     return r;
 }
 
+// A parameter named like the shim's own temporary once broke the build.
+std::string same(const std::string& r) {
+    return r;
+}
+
 int multiply(int a, int b) {
     return a * b;
 }

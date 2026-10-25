@@ -56,7 +56,21 @@ test("the C++ shim builds std::string and std::string_view from the ABI string a
   const shim = cppShim(module.functions[0]!, module);
   assert.match(shim, /static ts_polyglot_string ts_polyglot__shim_shout\(ts_polyglot_string s, ts_polyglot_string v, const char\* c, ts_polyglot_string\* error\)/);
   assert.match(shim, /shout\(std::string\(s\.ptr, s\.len\), std::string_view\(v\.ptr, v\.len\), c\)/);
-  assert.match(shim, /return ts_polyglot__own\(r\.data\(\), r\.size\(\)\)/);
+  assert.match(shim, /return ts_polyglot__own\(ts_polyglot_result\.data\(\), ts_polyglot_result\.size\(\)\)/);
+});
+
+// The review's regressions: a binding the shim or wrapper introduces must never shadow a parameter.
+test("the C++ shim's result temporary doesn't shadow a parameter named r", () => {
+  const module = parseModule("#include <string>\nstd::string same(const std::string& r) { return r; }\n", "cpp");
+  const shim = cppShim(module.functions[0]!, module);
+  assert.match(shim, /auto ts_polyglot_result = same\(std::string\(r\.ptr, r\.len\)\); return ts_polyglot__own\(ts_polyglot_result\.data\(\), ts_polyglot_result\.size\(\)\);/);
+});
+
+test("a Rust &'static primitive result is dereferenced", () => {
+  const module = parseModule("pub static MAX: u8 = 7;\npub fn max_level() -> &'static u8 { &MAX }\npub static C: char = 'x';\npub fn letter() -> &'static char { &C }\n", "rust");
+  const wrapper = rustWrapperSource("D:\\p\\s.rs", module);
+  assert.match(wrapper, /fn ts_polyglot__max_level\(error: \*mut ts_polyglot_string\) -> u8 \{[\s\S]*?Ok\(r\) => \(\*r\),/);
+  assert.match(wrapper, /fn ts_polyglot__letter\(error: \*mut ts_polyglot_string\) -> u32 \{[\s\S]*?Ok\(r\) => \(\*r\) as u32,/);
 });
 
 test("the Rust wrapper validates UTF-8 and owns string results", () => {

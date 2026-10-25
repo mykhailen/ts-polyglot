@@ -101,11 +101,12 @@ export function cppShim(fn: NativeFunction, module: NativeModule): string {
   const params = [...fn.params.map((param) => `${shape(param.type, module).c} ${param.name}`), `ts_polyglot_string* ${slot}`].join(", ");
   const call = `${fn.callee}(${fn.params.map((param) => cppArgument(param, module)).join(", ")})`;
   // A std::string-family result is copied into an owned ABI string: a `const std::string&` may refer
-  // to the shim's own argument, which dies with the shim.
+  // to the shim's own argument, which dies with the shim. The temporary is prefixed like every other
+  // binding the shim introduces: a parameter named `r` would otherwise be shadowed in its own initializer.
   const body =
     returns.kind === "void" ? `${call};`
-    : returns.kind === "string" ? `auto r = ${call}; return ts_polyglot__own(r.data(), r.size());`
-    : holdsText(returns) ? `auto r = ${call}; return ts_polyglot__to_${returns.kind === "struct" ? returns.name : ""}(r);`
+    : returns.kind === "string" ? `auto ts_polyglot_result = ${call}; return ts_polyglot__own(ts_polyglot_result.data(), ts_polyglot_result.size());`
+    : holdsText(returns) ? `auto ts_polyglot_result = ${call}; return ts_polyglot__to_${returns.kind === "struct" ? returns.name : ""}(ts_polyglot_result);`
     : `return ${call};`;
   return [
     `static ${returns.c} ts_polyglot__shim_${fn.name}(${params}) {`,

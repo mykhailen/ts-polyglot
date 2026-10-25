@@ -262,15 +262,16 @@ export function structHelpers(abi: AbiType & { kind: "struct" }): string {
     `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const char* path) {`,
     "  napi_valuetype type;",
     "  bool is_array = false;",
-    "  napi_value field;",
+    "  napi_value field = NULL;",
     "  char child[512];",
     "  napi_typeof(env, value, &type);",
     "  if (type == napi_object) napi_is_array(env, value, &is_array);",
     `  if (type != napi_object || is_array) return ts_polyglot_fail(env, false, fn, path, ${what});`,
   ];
   for (const field of abi.fields) {
-    // A missing property reads as undefined, which the field's own reader rejects with the full path.
-    lines.push(`  snprintf(child, sizeof child, "%s.${field.name}", path);`, `  napi_get_named_property(env, value, ${JSON.stringify(field.name)}, &field);`);
+    // A missing property reads as undefined, which the field's own reader rejects with the full path. A
+    // getter that throws leaves the slot unwritten and an exception pending: stop, and let it propagate.
+    lines.push(`  snprintf(child, sizeof child, "%s.${field.name}", path);`, `  if (napi_get_named_property(env, value, ${JSON.stringify(field.name)}, &field) != napi_ok) return false;`);
     lines.push(...readArgument(field.type, "field", `out->${field.member}`, "fn, child", "return false;").map((line) => `  ${line}`));
   }
   lines.push("  return true;", "}", "", `static napi_value ts_polyglot_make_${abi.name}(napi_env env, ${abi.c} value) {`, "  napi_value result;", "  napi_value field;", "  napi_create_object(env, &result);");

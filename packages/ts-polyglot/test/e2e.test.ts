@@ -124,6 +124,15 @@ test("plain structs cross by value, nested, with 64-bit and string fields", () =
   assert.equal(output.extra, 12);
 });
 
+test("a parameter named r, a borrowed primitive result and a throwing getter", () => {
+  const { output } = run("project");
+  assert.equal(output.same, "x");
+  assert.equal(output.sameEmpty, "");
+  assert.equal(output.maxLevel, 7);
+  // The getter's own error comes back; the reader never looks at the unwritten slot.
+  assert.equal(output.throwingGetter.error, "Error: getter");
+});
+
 test("struct arguments are checked field by field, with the path in the message", () => {
   const { output } = run("project");
   assert.equal(output.missing.error, "TypeError: shift(): p.y must be an integer between -9223372036854775808 and 9223372036854775807");

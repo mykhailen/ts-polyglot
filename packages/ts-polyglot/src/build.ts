@@ -19,7 +19,7 @@ import { languageModule, languageOf, parseModule } from "./languages/index.ts";
 import { compileAddon } from "./toolchain.ts";
 
 // Bump to rebuild every cached addon after changing the generated code or the compiler flags.
-const GLUE_VERSION = 9;
+const GLUE_VERSION = 10;
 // Linux and macOS bind an addon's symbols lazily, so a function the native file declares but never
 // defines would kill node at its first call. RTLD_NOW fails the import instead, catchably. Windows
 // has no dlopen flags; its linker already refuses such an addon.

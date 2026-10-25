@@ -1,7 +1,7 @@
-import { add, first_word, multiply, repeat, scale, shout, throws } from "./add.cpp";
+import { add, first_word, multiply, repeat, same, scale, shout, throws } from "./add.cpp";
 import { louder, mid } from "./labels.cpp";
 import { byte_count, describe, random } from "./names.c";
-import { byte_len, clamp, echo_ref, echo_usize, fib, motto, next_char, panics, shout as shout_rs } from "./numbers.rs";
+import { byte_len, clamp, echo_ref, echo_usize, fib, max_level, motto, next_char, panics, shout as shout_rs } from "./numbers.rs";
 import { dist, rename, shift } from "./points.rs";
 import { area, grow, retag } from "./shapes.c";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
@@ -76,6 +76,11 @@ const output = {
   nullStruct: attempt(() => shift(null as never, 1)),
   arrayStruct: attempt(() => shift([1, 2] as never, 1)),
   nestedWrong: attempt(() => rename({ name: "a", at: { x: "1", y: 2n } } as never, "b")),
+  // The review's regressions.
+  same: same("x"),
+  sameEmpty: same(""),
+  maxLevel: max_level(),
+  throwingGetter: attempt(() => area({ get x() { throw new Error("getter"); }, y: 1 } as never)),
 };
 
 // JSON has no bigint; print them with an `n` so the test can tell them from numbers.

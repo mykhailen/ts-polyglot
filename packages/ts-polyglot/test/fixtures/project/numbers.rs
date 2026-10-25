@@ -44,3 +44,10 @@ pub fn motto() -> &'static str {
 pub fn echo_ref(s: &String) -> String {
     s.clone()
 }
+
+// A borrowed primitive result: 'static is the one lifetime that can cross.
+pub static MAX: u8 = 7;
+
+pub fn max_level() -> &'static u8 {
+    &MAX
+}

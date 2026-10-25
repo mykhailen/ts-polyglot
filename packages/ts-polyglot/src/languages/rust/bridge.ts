@@ -141,14 +141,17 @@ function argument(name: string, type: NativeType): string {
   return type.kind === "char" ? `char::from_u32(${name}).unwrap_or('\\u{FFFD}')` : name;
 }
 
-/** How a user function's result becomes the wrapper's: text is copied into an owned ABI string, a struct into its mirror. */
-function lower(type: NativeType): string {
-  if (type.kind === "char") return "r as u32";
-  if (type.kind === "string") return "ts_polyglot_own(&r)";
-  if (type.kind === "struct") return `ts_polyglot_${type.name}::from(&r)`;
-  if (type.kind === "reference" && type.to.kind === "string") return "ts_polyglot_own(r)";
-  if (type.kind === "reference" && type.to.kind === "struct") return `ts_polyglot_${type.to.name}::from(r)`;
-  return "r";
+/** How a user function's result becomes the wrapper's: text is copied into an owned ABI string, a struct into its mirror, a `&'static` primitive is read through. */
+function lower(type: NativeType, expr = "r"): string {
+  if (type.kind === "reference") {
+    if (type.to.kind === "string") return `ts_polyglot_own(${expr})`;
+    if (type.to.kind === "struct") return `ts_polyglot_${type.to.name}::from(${expr})`;
+    return lower(type.to, `(*${expr})`);
+  }
+  if (type.kind === "char") return `${expr} as u32`;
+  if (type.kind === "string") return `ts_polyglot_own(&${expr})`;
+  if (type.kind === "struct") return `ts_polyglot_${type.name}::from(&${expr})`;
+  return expr;
 }
 
 /** `#[no_mangle] extern "C"` wrapper around a user function: boundary types in and out, the error slot set on a panic. */
