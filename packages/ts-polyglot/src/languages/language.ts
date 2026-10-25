@@ -4,7 +4,7 @@
 // says what a language has to provide there.
 import type { Node } from "web-tree-sitter";
 
-import type { NativeFunction } from "../signatures.ts";
+import type { LegacyFunction } from "../signatures.ts";
 
 export type Language = "c" | "cpp" | "rust";
 
@@ -15,5 +15,5 @@ export interface LanguageModule {
   /** A file under grammars/: the manifest's `asset`. */
   grammar: string;
   /** The exportable functions in a parsed file, in source order, same-named duplicates included. */
-  functions(root: Node, source: string): NativeFunction[];
+  functions(root: Node, source: string): LegacyFunction[];
 }

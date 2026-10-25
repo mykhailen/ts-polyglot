@@ -2,7 +2,7 @@
 // asynchronous and happens once per language; parsing is synchronous, so the runtime hook can call
 // it from its resolve.
 import { loadGrammar, parse } from "../parser.ts";
-import type { NativeFunction } from "../signatures.ts";
+import type { LegacyFunction } from "../signatures.ts";
 import { c } from "./c.ts";
 import { cpp } from "./cpp.ts";
 import type { Language, LanguageModule } from "./language.ts";
@@ -31,10 +31,10 @@ export function loadLanguage(language: Language): Promise<void> {
 }
 
 /** The functions a file exports. The language must have been loaded. */
-export function findFunctions(source: string, language: Language): NativeFunction[] {
+export function findFunctions(source: string, language: Language): LegacyFunction[] {
   const module = moduleFor(language);
   const tree = parse(module.grammar, source);
-  let found: NativeFunction[];
+  let found: LegacyFunction[];
   try {
     found = module.functions(tree.rootNode, source);
   } finally {

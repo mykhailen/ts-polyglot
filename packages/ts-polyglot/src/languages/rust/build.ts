@@ -6,11 +6,11 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Compiler } from "../../compiler.ts";
-import type { NativeFunction } from "../../signatures.ts";
+import type { LegacyFunction } from "../../signatures.ts";
 import { run } from "../../toolchain.ts";
 
 /** Builds the static library and returns it with the native libraries it needs, ready to link. */
-export function rustStaticLib(file: string, functions: NativeFunction[], dir: string, libName: string, debug: boolean): string[] {
+export function rustStaticLib(file: string, functions: LegacyFunction[], dir: string, libName: string, debug: boolean): string[] {
   const wrapper = join(dir, "wrapper.rs");
   writeFileSync(
     wrapper,
@@ -32,7 +32,7 @@ export function rustStaticLib(file: string, functions: NativeFunction[], dir: st
 }
 
 /** `#[no_mangle] extern "C"` wrapper around a Rust function, using the C boundary types. */
-export function rustWrapper(fn: NativeFunction): string {
+export function rustWrapper(fn: LegacyFunction): string {
   const params = fn.params.map((p) => `${p.name}: ${p.kind.rust}`).join(", ");
   const args = fn.params.map((p) => (p.type === p.kind.rust ? p.name : `${p.name} as ${p.type}`)).join(", ");
   const call = `user::${fn.callee}(${args})`;
@@ -42,7 +42,7 @@ export function rustWrapper(fn: NativeFunction): string {
 }
 
 /** The wrapper's C prototype, for the glue. */
-export function rustPrototype(fn: NativeFunction): string {
+export function rustPrototype(fn: LegacyFunction): string {
   const params = fn.params.map((p, i) => `${p.kind.c} arg${i}`).join(", ") || "void";
   return `${fn.returns.c} ts_polyglot__${fn.name}(${params});`;
 }

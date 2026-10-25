@@ -5,7 +5,7 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../../parser.ts";
-import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../../signatures.ts";
+import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type LegacyFunction, type LegacyParam } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
 
 export const RUST_TYPES: Record<string, Kind> = {
@@ -17,14 +17,14 @@ export const rust: LanguageModule = { id: "rust", extensions: [".rs"], grammar: 
 // tree-sitter-rust has two comment nodes where the C grammars have one.
 const COMMENTS = ["line_comment", "block_comment"];
 
-export function rustFunctions(root: Node, source: string): NativeFunction[] {
-  const found: NativeFunction[] = [];
+export function rustFunctions(root: Node, source: string): LegacyFunction[] {
+  const found: LegacyFunction[] = [];
   visit(root, [], source, found);
   return found;
 }
 
 /** `node` is the source file or a module body: a list of items. */
-function visit(node: Node, modules: readonly string[], source: string, found: NativeFunction[]): void {
+function visit(node: Node, modules: readonly string[], source: string, found: LegacyFunction[]): void {
   for (const child of node.namedChildren) {
     if (child.type === "function_item") {
       const fn = item(child, modules, source);
@@ -42,7 +42,7 @@ function visit(node: Node, modules: readonly string[], source: string, found: Na
   }
 }
 
-function item(node: Node, modules: readonly string[], source: string): NativeFunction | undefined {
+function item(node: Node, modules: readonly string[], source: string): LegacyFunction | undefined {
   // `pub(crate)` scopes a function to the crate on purpose: the author didn't mean it for the world,
   // even though the wrapper technically lives in that crate.
   if (node.namedChildren.find((n) => n.type === "visibility_modifier")?.text !== "pub") return undefined;
@@ -78,8 +78,8 @@ function kindOf(typeNode: Node): { type: string; kind: Kind } | undefined {
   return kind && { type, kind };
 }
 
-function parameters(list: Node): Param[] | undefined {
-  const params: Param[] = [];
+function parameters(list: Node): LegacyParam[] | undefined {
+  const params: LegacyParam[] = [];
   for (const parameter of list.namedChildren) {
     if (COMMENTS.includes(parameter.type)) continue;
     // `self`, `...` and parameter attributes have no place in the wrapper.

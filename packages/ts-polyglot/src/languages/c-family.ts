@@ -5,7 +5,7 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../parser.ts";
-import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type NativeFunction, type Param } from "../signatures.ts";
+import { BOOL, F64, I32, I64, U32, VOID, oneLine, type Kind, type LegacyFunction, type LegacyParam } from "../signatures.ts";
 
 // `long` is 32-bit on Windows but 64-bit on Linux and macOS, so it crosses as 64-bit everywhere and
 // every OS sees the same functions. `unsigned long` would need 64-bit unsigned values, which don't
@@ -24,13 +24,13 @@ export const C_TYPES: Record<string, Kind> = {
 // definition of a name wins downstream, which makes `#ifdef`/`#else` pairs come out as one function.
 const CONTAINERS = new Set(["translation_unit", "declaration_list", "preproc_if", "preproc_ifdef", "preproc_elif", "preproc_elifdef", "preproc_else"]);
 
-export function cFamilyFunctions(root: Node, source: string): NativeFunction[] {
-  const found: NativeFunction[] = [];
+export function cFamilyFunctions(root: Node, source: string): LegacyFunction[] {
+  const found: LegacyFunction[] = [];
   visit(root, [], source, found);
   return found;
 }
 
-function visit(node: Node, namespaces: readonly string[], source: string, found: NativeFunction[]): void {
+function visit(node: Node, namespaces: readonly string[], source: string, found: LegacyFunction[]): void {
   if (node.type === "function_definition") {
     const fn = definition(node, namespaces, source);
     if (fn) found.push(fn);
@@ -49,7 +49,7 @@ function visit(node: Node, namespaces: readonly string[], source: string, found:
   // Templates, classes and prototypes (`declaration`) are among what falls through.
 }
 
-function definition(node: Node, namespaces: readonly string[], source: string): NativeFunction | undefined {
+function definition(node: Node, namespaces: readonly string[], source: string): LegacyFunction | undefined {
   // `static` keeps a function private to its file; `main` is the program, not a library function.
   if (node.children.some((child) => child.type === "storage_class_specifier" && child.text === "static")) return undefined;
   const type = node.childForFieldName("type");
@@ -88,13 +88,13 @@ function kindOf(typeNode: Node | null | undefined): { type: string; kind: Kind }
   return kind && { type, kind };
 }
 
-function parameters(list: Node | null): Param[] | undefined {
+function parameters(list: Node | null): LegacyParam[] | undefined {
   if (!list) return undefined;
   const declarations = list.namedChildren.filter((child) => child.type !== "comment");
   // `f(void)` declares no parameters.
   const [only] = declarations;
   if (declarations.length === 1 && only!.type === "parameter_declaration" && !only!.childForFieldName("declarator") && only!.childForFieldName("type")?.text === "void") return [];
-  const params: Param[] = [];
+  const params: LegacyParam[] = [];
   for (const [index, declaration] of declarations.entries()) {
     // A default argument (`optional_parameter_declaration`) is still a required parameter: the glue
     // always passes every argument. Anything else is `...`.
