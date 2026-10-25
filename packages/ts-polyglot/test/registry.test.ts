@@ -22,6 +22,12 @@ test("Rust: a mod's functions, a 64-bit unsigned type and a &str are kept", () =
   assert.deepEqual(functions.map((f) => f.callee), ["m::f", "g"]);
 });
 
+test("parseModule keeps structs whose fields are all supported and the functions that use them", () => {
+  const { structs, functions } = parseModule("struct Point { int x; int y; };\nstruct Bad { int* p; };\nstruct Nest { struct Bad b; };\nint area(struct Point p) { return 0; }\nint bad(struct Bad b) { return 0; }\nint nest(struct Nest n) { return 0; }\n", "c");
+  assert.deepEqual(structs.map((s) => s.name), ["Point"]);
+  assert.deepEqual(functions.map((f) => f.name), ["area"]);
+});
+
 test("findFunctions is parseModule's functions", () => {
   const [fn] = findFunctions("long echo_long(long x) { return x; }", "c");
   assert.equal(fn?.returns.spelling, "long");

@@ -59,6 +59,12 @@ test("a const reference parameter types as its target; Rust char is a string", (
   assert.match(checkVerbatim("c.rs", "pub fn c(x: char) -> char { x }\n"), /c\(x: string\): string;/);
 });
 
+test("plain structs are exported interfaces with verbatim names and fields, before the functions", () => {
+  const text = checkVerbatim("shapes.c", "#include <stdint.h>\nstruct Point { int x; int64_t y; };\ntypedef struct { const char* name; struct Point at; } Tag;\nTag tag(Tag t, struct Point p) { return t; }\n");
+  assert.equal(text, "/** `struct Point` from shapes.c */\nexport interface Point {\n  x: number;\n  y: bigint;\n}\n/** `struct Tag` from shapes.c */\nexport interface Tag {\n  name: string | null;\n  at: Point;\n}\n/** `Tag tag(Tag t, struct Point p)` from shapes.c, run through a Node-API addon. */\nexport declare function tag(t: Tag, p: Point): Tag;\n");
+  assert.match(checkVerbatim("p.rs", "pub struct P { pub x: i32 }\npub fn f(p: &P) -> P { P { x: 0 } }\n"), /\/\*\* `pub struct P` from p\.rs \*\/\nexport interface P \{\n  x: number;\n\}\n.*\nexport declare function f\(p: P\): P;/);
+});
+
 test("strings: const char* is string | null, the owning and view types are string", () => {
   assert.match(checkVerbatim("n.c", "const char* describe(const char* s) { return s; }\n"), /describe\(s: string \| null\): string \| null;/);
   assert.match(checkVerbatim("s.cpp", "std::string shout(const std::string& s, std::string_view v, std::string o) { return o; }\n"), /shout\(s: string, v: string, o: string\): string;/);

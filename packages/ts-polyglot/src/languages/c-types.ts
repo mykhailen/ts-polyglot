@@ -1,7 +1,7 @@
 // The C and C++ type table: a spelling's structured type, the C type the glue declares it as, and the
 // macros that bound it. The limits are macros, not numbers, so the compiler applies the platform's
 // widths: `long` checks 32 bits on Windows and 64 elsewhere while its TypeScript type stays `bigint`.
-import { oneLine, type NativeType } from "../signatures.ts";
+import { oneLine, type NativeModule, type NativeType } from "../signatures.ts";
 import type { AbiType } from "./language.ts";
 
 export interface CType {
@@ -73,8 +73,14 @@ export function cType(spelling: string): CType | undefined {
 }
 
 /** How a supported C or C++ type crosses the boundary: the user's own type, with the table's limits. A reference crosses as its target. */
-export function cAbi(type: NativeType): AbiType {
-  if (type.kind === "reference") return cAbi(type.to);
+export function cAbi(type: NativeType, module: NativeModule): AbiType {
+  if (type.kind === "reference") return cAbi(type.to, module);
+  if (type.kind === "struct") {
+    // The user's own struct, which the glue sees through the #include; C++ swaps in a mirror where it must.
+    const struct = module.structs.find((candidate) => candidate.name === type.name);
+    if (!struct) throw new Error(`ts-polyglot: ${type.spelling} isn't a struct this file defines`);
+    return { kind: "struct", c: struct.spelling, name: struct.name, fields: struct.fields.map((field) => ({ name: field.name, member: field.name, type: cAbi(field.type, module) })) };
+  }
   // The walker typed it from this table, so the entry is there.
   const entry = cType(type.spelling);
   if (type.kind === "int" && entry) return { kind: "int", c: entry.c, bits: type.bits, signed: type.signed, min: entry.min!, max: entry.max! };

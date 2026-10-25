@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
 import { findFunctions, loadLanguage } from "../src/languages/index.ts";
-import { supported, type NativeModule, type NativeType } from "../src/signatures.ts";
+import { supported, type NativeModule, type NativeStruct, type NativeType } from "../src/signatures.ts";
 
 before(() => loadLanguage("c"));
 
@@ -24,6 +24,25 @@ test("supported: strings, nullable or not, and references to them", () => {
   assert.ok(supported({ kind: "string", nullable: true, spelling: "const char*" }, empty));
   assert.ok(supported({ kind: "string", nullable: false, spelling: "std::string" }, empty));
   assert.ok(supported({ kind: "reference", mutable: false, to: { kind: "string", nullable: false, spelling: "str" }, spelling: "&str" }, empty));
+});
+
+test("supported: a struct in the module whose fields all cross, recursively", () => {
+  const struct = (name: string, fields: [string, NativeType][]): NativeStruct => ({ name, nameStart: 0, path: [], spelling: `struct ${name}`, fields: fields.map(([n, type]) => ({ name: n, nameStart: 0, type })) });
+  const module: NativeModule = {
+    functions: [],
+    structs: [
+      struct("Point", [["x", int(32, true)], ["y", int(64, false)]]),
+      struct("Bad", [["p", { kind: "pointer", to: int(32, true), const: false, spelling: "int*" }]]),
+      struct("Nest", [["b", { kind: "struct", name: "Bad", spelling: "struct Bad" }]]),
+      struct("Ref", [["r", { kind: "reference", mutable: false, to: int(32, true), spelling: "const int&" }]]),
+    ],
+  };
+  assert.ok(supported({ kind: "struct", name: "Point", spelling: "struct Point" }, module));
+  assert.ok(supported({ kind: "reference", mutable: false, to: { kind: "struct", name: "Point", spelling: "Point" }, spelling: "const Point&" }, module));
+  assert.equal(supported({ kind: "struct", name: "Bad", spelling: "struct Bad" }, module), false);
+  assert.equal(supported({ kind: "struct", name: "Nest", spelling: "struct Nest" }, module), false);
+  assert.equal(supported({ kind: "struct", name: "Ref", spelling: "struct Ref" }, module), false); // a reference field can't be assigned after the fact
+  assert.equal(supported({ kind: "struct", name: "Missing", spelling: "Missing" }, module), false);
 });
 
 test("supported: mutable references, pointers, arrays and unknowns are not", () => {

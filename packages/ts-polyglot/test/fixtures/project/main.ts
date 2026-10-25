@@ -1,6 +1,9 @@
 import { add, first_word, multiply, repeat, scale, shout, throws } from "./add.cpp";
+import { louder, mid } from "./labels.cpp";
 import { byte_count, describe, random } from "./names.c";
 import { byte_len, clamp, echo_ref, echo_usize, fib, motto, next_char, panics, shout as shout_rs } from "./numbers.rs";
+import { dist, rename, shift } from "./points.rs";
+import { area, grow, retag } from "./shapes.c";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
 
 // What a call threw, as "Name: message", so the test can check the class and the text.
@@ -57,6 +60,22 @@ const output = {
   echoLong: echo_ref("y".repeat(100000)).length,
   wrongString: attempt(() => shout(5 as never)),
   nullToOwned: attempt(() => byte_len(null as never)),
+  // Plain structs.
+  area: area({ x: 3, y: 4 }),
+  grow: grow({ min: { x: 0, y: 0 }, max: { x: 1, y: 1 }, id: 5n }, 1),
+  retag: retag({ name: "a", id: 1 }, 2),
+  retagNull: retag({ name: null, id: 1 }, 2).name,
+  louder: louder({ text: "hi", size: 1 }),
+  mid: mid({ x: 0, y: 0 }, { x: 2, y: 4 }),
+  shift: shift({ x: 1, y: 2n }, 3),
+  shiftNumber: shift({ x: 1, y: 2 } as never, 3),
+  rename: rename({ name: "a", at: { x: 1, y: 2n } }, "b"),
+  dist: dist({ x: 0, y: 0n }, { x: 3, y: 4n }),
+  extra: area({ x: 3, y: 4, z: 9 } as never),
+  missing: attempt(() => shift({ x: 1 } as never, 1)),
+  nullStruct: attempt(() => shift(null as never, 1)),
+  arrayStruct: attempt(() => shift([1, 2] as never, 1)),
+  nestedWrong: attempt(() => rename({ name: "a", at: { x: "1", y: 2n } } as never, "b")),
 };
 
 // JSON has no bigint; print them with an `n` so the test can tell them from numbers.

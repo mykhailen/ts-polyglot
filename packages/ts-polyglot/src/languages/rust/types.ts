@@ -1,7 +1,7 @@
 // The Rust type table: a spelling's structured type, the C type the glue sees it as at the wrapper's
 // boundary, and the macros that bound it. Every Rust integer type is FFI-safe, so the wrapper keeps the
 // user's spelling and only the C prototype names the twin (`isize` is `intptr_t` there).
-import { oneLine, type NativeType } from "../../signatures.ts";
+import { oneLine, type NativeModule, type NativeType } from "../../signatures.ts";
 import type { AbiType } from "../language.ts";
 
 export interface RustType {
@@ -45,9 +45,20 @@ export function rustType(spelling: string): RustType | undefined {
   return TABLE.get(oneLine(spelling));
 }
 
-/** How a supported Rust type crosses the wrapper's boundary. A reference crosses as its target. */
-export function rustAbi(type: NativeType): AbiType {
-  if (type.kind === "reference") return rustAbi(type.to);
+// A Rust field named like a C keyword can't be a member of the mirror typedef as it is.
+const C_KEYWORDS = new Set(["auto", "bool", "break", "case", "char", "const", "continue", "default", "do", "double", "else", "enum", "extern", "false", "float", "for", "goto", "if", "inline", "int", "long", "register", "restrict", "return", "short", "signed", "sizeof", "static", "struct", "switch", "true", "typedef", "union", "unsigned", "void", "volatile", "while"]);
+
+/** The C member name for a Rust field: its own, unless C would read it as a keyword. */
+export const cMember = (name: string) => (C_KEYWORDS.has(name) ? `m_${name}` : name);
+
+/** How a supported Rust type crosses the wrapper's boundary. A reference crosses as its target; a struct as its repr(C) mirror. */
+export function rustAbi(type: NativeType, module: NativeModule): AbiType {
+  if (type.kind === "reference") return rustAbi(type.to, module);
+  if (type.kind === "struct") {
+    const struct = module.structs.find((candidate) => candidate.name === type.name);
+    if (!struct) throw new Error(`ts-polyglot: ${type.spelling} isn't a struct this file defines`);
+    return { kind: "struct", c: `ts_polyglot_${struct.name}`, name: struct.name, fields: struct.fields.map((field) => ({ name: field.name, member: cMember(field.name), type: rustAbi(field.type, module) })) };
+  }
   const entry = rustType(type.spelling);
   if (type.kind === "int" && entry) return { kind: "int", c: entry.c, bits: type.bits, signed: type.signed, min: entry.min!, max: entry.max! };
   if (type.kind === "float" && entry) return { kind: "float", c: entry.c, bits: type.bits };

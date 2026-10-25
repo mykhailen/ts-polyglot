@@ -109,6 +109,29 @@ test("strings cross as UTF-8 in both directions, with C's NUL and NULL rules", (
   assert.equal(output.nullToOwned.error, "TypeError: byte_len(): s must be a string");
 });
 
+test("plain structs cross by value, nested, with 64-bit and string fields", () => {
+  const { output } = run("project");
+  assert.equal(output.area, 12);
+  assert.deepEqual(output.grow, { min: { x: -1, y: -1 }, max: { x: 2, y: 2 }, id: "5n" });
+  assert.deepEqual(output.retag, { name: "a", id: 2 });
+  assert.equal(output.retagNull, null);
+  assert.deepEqual(output.louder, { text: "hi!", size: 2 });
+  assert.deepEqual(output.mid, { x: 1, y: 2 });
+  assert.deepEqual(output.shift, { x: 4, y: "2n" });
+  assert.deepEqual(output.shiftNumber, { x: 4, y: "2n" });
+  assert.deepEqual(output.rename, { name: "b", at: { x: 1, y: "2n" } });
+  assert.equal(output.dist, 5);
+  assert.equal(output.extra, 12);
+});
+
+test("struct arguments are checked field by field, with the path in the message", () => {
+  const { output } = run("project");
+  assert.equal(output.missing.error, "TypeError: shift(): p.y must be an integer between -9223372036854775808 and 9223372036854775807");
+  assert.equal(output.nullStruct.error, "TypeError: shift(): p must be an object with x, y");
+  assert.equal(output.arrayStruct.error, "TypeError: shift(): p must be an object with x, y");
+  assert.equal(output.nestedWrong.error, "TypeError: rename(): n.at.x must be an integer between -2147483648 and 2147483647");
+});
+
 test("a C function named like a libc function runs, not libc's", () => {
   assert.equal(run("project").output.random, 10);
 });

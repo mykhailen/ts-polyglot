@@ -8,7 +8,7 @@ export const c: LanguageModule = { id: "c", extensions: [".c"], grammar: "tree-s
 export function cBridge(input: BridgeInput): Bridge {
   return {
     prelude: `#include "${input.file.replaceAll("\\", "/")}"`,
-    callee: (fn) => ({ name: fn.callee, params: fn.params.map((param) => cAbi(param.type)), returns: cAbi(fn.returns), reportsErrors: false }),
+    callee: (fn) => ({ name: fn.callee, params: fn.params.map((param) => cAbi(param.type, input.module)), returns: cAbi(fn.returns, input.module), reportsErrors: false }),
     libs: [],
   };
 }

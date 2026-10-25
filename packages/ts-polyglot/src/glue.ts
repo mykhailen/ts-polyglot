@@ -2,11 +2,12 @@
 // compiles to. The glue knows only the language's bridge (what to call, with which C types) and the
 // marshaling helpers; one wrapper per function reads its arguments strictly, calls, checks the error
 // slot, makes the result and cleans up on every path.
-import type { Bridge, Callee } from "./languages/language.ts";
-import { ABI_HEADER, HELPERS, cleanup, makeResult, readArgument } from "./marshal.ts";
+import type { AbiType, Bridge, Callee } from "./languages/language.ts";
+import { ABI_HEADER, HELPERS, cleanup, makeResult, readArgument, structHelpers } from "./marshal.ts";
 import type { NativeFunction, NativeModule } from "./signatures.ts";
 
 export function glueSource(module: NativeModule, bridge: Bridge): string {
+  const callees = module.functions.map((fn) => bridge.callee(fn));
   // The second comment is for whoever steps out of a native function in a debugger: this wrapper is
   // its caller, and past the wrapper is JavaScript, which a native debugger can't show.
   const lines = [
@@ -19,8 +20,9 @@ export function glueSource(module: NativeModule, bridge: Bridge): string {
     "",
     HELPERS,
     "",
+    ...structs(callees).map(structHelpers),
   ];
-  for (const fn of module.functions) lines.push(...wrapper(fn, bridge.callee(fn)));
+  module.functions.forEach((fn, i) => lines.push(...wrapper(fn, callees[i]!)));
   lines.push("NAPI_MODULE_INIT() {", "  napi_value fn;");
   for (const fn of module.functions) {
     lines.push(
@@ -30,6 +32,23 @@ export function glueSource(module: NativeModule, bridge: Bridge): string {
   }
   lines.push("  return exports;", "}", "");
   return lines.join("\n");
+}
+
+/** Every struct the callees pass or return, each once, fields before the structs that hold them. */
+function structs(callees: Callee[]): (AbiType & { kind: "struct" })[] {
+  const ordered: (AbiType & { kind: "struct" })[] = [];
+  const seen = new Set<string>();
+  const visit = (abi: AbiType) => {
+    if (abi.kind !== "struct" || seen.has(abi.name)) return;
+    seen.add(abi.name);
+    for (const field of abi.fields) visit(field.type);
+    ordered.push(abi);
+  };
+  for (const callee of callees) {
+    callee.params.forEach(visit);
+    visit(callee.returns);
+  }
+  return ordered;
 }
 
 function wrapper(fn: NativeFunction, callee: Callee): string[] {
@@ -49,10 +68,11 @@ function wrapper(fn: NativeFunction, callee: Callee): string[] {
     "  napi_get_cb_info(env, info, &ts_argc, ts_argv, NULL, NULL);",
     `  if (ts_argc < ${count}) { napi_throw_type_error(env, NULL, "${fn.name}() expects ${count} argument(s)"); goto fail; }`,
   ];
-  fn.params.forEach((param, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, fn.name, param.name))));
+  fn.params.forEach((param, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, `${JSON.stringify(fn.name)}, ${JSON.stringify(param.name)}`))));
   const call = `${callee.name}(${[...callee.params.map((_, i) => `arg${i}`), ...(callee.reportsErrors ? ["&ts_error"] : [])].join(", ")})`;
   lines.push(callee.returns.kind === "void" ? `  ${call};` : `  ts_value = ${call};`);
   if (callee.reportsErrors) lines.push("  if (ts_error.ptr) { ts_polyglot_throw_slot(env, ts_error); goto fail; }");
+  // The result is made before the arguments are freed: a C function may return a string it was given.
   lines.push(...indent(makeResult(callee.returns, "ts_value", "ts_result")));
   lines.push("  goto done;", "fail:", "  ts_result = NULL;", "done:");
   callee.params.forEach((abi, i) => lines.push(...indent(cleanup(abi, `arg${i}`))));

@@ -67,9 +67,10 @@ export interface NativeModule {
 
 /**
  * Whether the glue marshals a value of this type. An immutable reference crosses by value, with the
- * callee borrowing the glue's copy for the call. Structs join as the glue learns them.
+ * callee borrowing the glue's copy for the call. A struct crosses when the module defines it and every
+ * field crosses; a reference field can't be assigned once the struct exists, so it doesn't.
  */
-export function supported(type: NativeType, _module: NativeModule): boolean {
+export function supported(type: NativeType, module: NativeModule, visiting: Set<string> = new Set()): boolean {
   switch (type.kind) {
     case "void":
     case "bool":
@@ -79,10 +80,39 @@ export function supported(type: NativeType, _module: NativeModule): boolean {
     case "string":
       return true;
     case "reference":
-      return !type.mutable && supported(type.to, _module);
+      return !type.mutable && supported(type.to, module, visiting);
+    case "struct": {
+      // No language lets a struct hold itself by value; the set guards the walk anyway.
+      if (visiting.has(type.name)) return false;
+      const struct = module.structs.find((candidate) => candidate.name === type.name);
+      if (!struct) return false;
+      visiting.add(type.name);
+      const ok = struct.fields.every((field) => field.type.kind !== "reference" && supported(field.type, module, visiting));
+      visiting.delete(type.name);
+      return ok;
+    }
     default:
       return false;
   }
+}
+
+/** The module's structs with every struct before the ones that hold it, so C typedefs and readers come in a compilable order. */
+export function structsInDependencyOrder(module: NativeModule): NativeStruct[] {
+  const ordered: NativeStruct[] = [];
+  const seen = new Set<string>();
+  const visit = (name: string) => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const struct = module.structs.find((candidate) => candidate.name === name);
+    if (!struct) return;
+    for (const field of struct.fields) {
+      const type = field.type.kind === "reference" ? field.type.to : field.type;
+      if (type.kind === "struct") visit(type.name);
+    }
+    ordered.push(struct);
+  };
+  for (const struct of module.structs) visit(struct.name);
+  return ordered;
 }
 
 /** Whitespace collapsed to single spaces and trimmed: a type or a header as one line. */

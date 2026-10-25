@@ -8,6 +8,7 @@ import { cppBridge, cppShim } from "../src/languages/cpp.ts";
 import { languages, loadLanguage, parseModule } from "../src/languages/index.ts";
 import type { BridgeInput } from "../src/languages/language.ts";
 import { rustPrelude, rustWrapperSource } from "../src/languages/rust/bridge.ts";
+import { rustAbi } from "../src/languages/rust/types.ts";
 import type { NativeModule } from "../src/signatures.ts";
 
 before(() => Promise.all(languages.map((language) => loadLanguage(language.id))));
@@ -52,7 +53,7 @@ test("the Rust wrapper keeps the user's spellings, catches panics and reports th
 
 test("the C++ shim builds std::string and std::string_view from the ABI string and copies string results", () => {
   const module = parseModule("#include <string>\nstd::string shout(const std::string& s, std::string_view v, const char* c) { return s; }\n", "cpp");
-  const shim = cppShim(module.functions[0]!);
+  const shim = cppShim(module.functions[0]!, module);
   assert.match(shim, /static ts_polyglot_string ts_polyglot__shim_shout\(ts_polyglot_string s, ts_polyglot_string v, const char\* c, ts_polyglot_string\* error\)/);
   assert.match(shim, /shout\(std::string\(s\.ptr, s\.len\), std::string_view\(v\.ptr, v\.len\), c\)/);
   assert.match(shim, /return ts_polyglot__own\(r\.data\(\), r\.size\(\)\)/);
@@ -66,4 +67,19 @@ test("the Rust wrapper validates UTF-8 and owns string results", () => {
   assert.match(wrapper, /user::shout\(s, o\.to_owned\(\), &String::from\(r\)\)/);
   assert.match(wrapper, /Ok\(r\) => ts_polyglot_own\(&r\)/);
   assert.match(wrapper, /fn ts_polyglot__motto\(error: \*mut ts_polyglot_string\) -> ts_polyglot_string/);
+});
+
+test("C++ uses the user's struct unless it holds a std::string, then a mirror; Rust always mirrors", () => {
+  const cpp = parseModule("#include <string>\nstruct Pt { double x; double y; };\nstruct Label { std::string text; int size; };\nPt mid(Pt a) { return a; }\nLabel louder(const Label& l) { return l; }\n", "cpp");
+  const bridge = cppBridge(input("D:\\p\\l.cpp", cpp));
+  assert.equal(bridge.callee(cpp.functions[0]!).params[0]!.c, "Pt");
+  assert.equal(bridge.callee(cpp.functions[1]!).params[0]!.c, "ts_polyglot_Label");
+  assert.match(bridge.prelude, /typedef struct \{ ts_polyglot_string text; int size; \} ts_polyglot_Label;/);
+  const rs = parseModule("pub struct Point { pub x: i32, pub long: i64 }\npub fn shift(p: Point) -> Point { p }\n", "rust");
+  const wrapper = rustWrapperSource("D:\\p\\p.rs", rs);
+  assert.match(wrapper, /#\[repr\(C\)\]\npub struct ts_polyglot_Point \{ pub x: i32, pub m_long: i64 \}/);
+  assert.match(wrapper, /impl From<ts_polyglot_Point> for user::Point/);
+  assert.match(rustPrelude(rs), /typedef struct \{ int32_t x; int64_t m_long; \} ts_polyglot_Point;/);
+  const abi = rustAbi(rs.functions[0]!.params[0]!.type, rs);
+  assert.deepEqual(abi.kind === "struct" && abi.fields.map((f) => [f.name, f.member]), [["x", "x"], ["long", "m_long"]]);
 });

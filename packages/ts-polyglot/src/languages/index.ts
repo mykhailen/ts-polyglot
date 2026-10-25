@@ -50,7 +50,7 @@ function walk(source: string, language: Language): NativeModule {
 export function parseModule(source: string, language: Language): NativeModule {
   const raw = walk(source, language);
   // A struct is only as supported as its fields, which may be structs themselves.
-  const module: NativeModule = { functions: [], structs: raw.structs.filter((struct) => struct.fields.every((field) => supported(field.type, raw))) };
+  const module: NativeModule = { functions: [], structs: raw.structs.filter((struct) => supported({ kind: "struct", name: struct.name, spelling: struct.spelling }, raw)) };
   const seen = new Set<string>();
   module.functions = raw.functions.filter((fn) => [fn.returns, ...fn.params.map((param) => param.type)].every((type) => supported(type, module)) && !seen.has(fn.name) && seen.add(fn.name));
   return module;

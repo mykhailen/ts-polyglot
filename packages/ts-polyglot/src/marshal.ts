@@ -224,31 +224,61 @@ static void ts_polyglot_throw_slot(napi_env env, ts_polyglot_string error) {
   if (error.release) error.release(error.ptr, error.len);
 }`;
 
-const literal = (text: string) => JSON.stringify(text);
-
-/** C that reads the JavaScript value `value` into the C lvalue `into`, or jumps to `fail` after throwing. `fn` and `path` go into the message. */
-export function readArgument(abi: AbiType, value: string, into: string, fn: string, path: string): string[] {
-  const where = `${literal(fn)}, ${literal(path)}`;
+/**
+ * C that reads the JavaScript value `value` into the C lvalue `into`, or runs `onFail` after throwing.
+ * `where` is the C for the message's function and path arguments, literals or variables. A reader
+ * never frees what it has read: the glue's cleanup does, over every argument, which zero-initialization
+ * makes safe for what was never read.
+ */
+export function readArgument(abi: AbiType, value: string, into: string, where: string, onFail = "goto fail;"): string[] {
   switch (abi.kind) {
     case "int":
       // Read at full width against the type's own limits, then narrow: the check has already passed.
       return abi.signed
-        ? [`{ int64_t wide; if (!ts_polyglot_read_int(env, ${value}, (int64_t)(${abi.min}), (int64_t)(${abi.max}), &wide, ${where})) goto fail; ${into} = (${abi.c})wide; }`]
-        : [`{ uint64_t wide; if (!ts_polyglot_read_uint(env, ${value}, (uint64_t)(${abi.max}), &wide, ${where})) goto fail; ${into} = (${abi.c})wide; }`];
+        ? [`{ int64_t wide; if (!ts_polyglot_read_int(env, ${value}, (int64_t)(${abi.min}), (int64_t)(${abi.max}), &wide, ${where})) ${onFail} ${into} = (${abi.c})wide; }`]
+        : [`{ uint64_t wide; if (!ts_polyglot_read_uint(env, ${value}, (uint64_t)(${abi.max}), &wide, ${where})) ${onFail} ${into} = (${abi.c})wide; }`];
     case "float":
-      return [`{ double wide; if (!ts_polyglot_read_double(env, ${value}, &wide, ${where})) goto fail; ${into} = (${abi.c})wide; }`];
+      return [`{ double wide; if (!ts_polyglot_read_double(env, ${value}, &wide, ${where})) ${onFail} ${into} = (${abi.c})wide; }`];
     case "bool":
-      return [`if (!ts_polyglot_read_bool(env, ${value}, &${into}, ${where})) goto fail;`];
+      return [`if (!ts_polyglot_read_bool(env, ${value}, &${into}, ${where})) ${onFail}`];
     case "char":
-      return [`if (!ts_polyglot_read_char(env, ${value}, &${into}, ${where})) goto fail;`];
+      return [`if (!ts_polyglot_read_char(env, ${value}, &${into}, ${where})) ${onFail}`];
     case "cstring":
       // The local is the `const char*` the callee takes; the reader writes it through a `char**`.
-      return [`if (!ts_polyglot_read_cstring(env, ${value}, (char**)&${into}, ${where})) goto fail;`];
+      return [`if (!ts_polyglot_read_cstring(env, ${value}, (char**)&${into}, ${where})) ${onFail}`];
     case "string":
-      return [`if (!ts_polyglot_read_string(env, ${value}, &${into}, ${where})) goto fail;`];
+      return [`if (!ts_polyglot_read_string(env, ${value}, &${into}, ${where})) ${onFail}`];
+    case "struct":
+      return [`if (!ts_polyglot_read_${abi.name}(env, ${value}, &${into}, ${where})) ${onFail}`];
     default:
-      throw new Error(`ts-polyglot: ${abi.kind} arguments aren't marshaled yet`);
+      throw new Error(`ts-polyglot: ${abi.kind} arguments aren't marshaled`);
   }
+}
+
+/** The reader and the maker for one struct: field by field through the other helpers, with the path extended for the message. */
+export function structHelpers(abi: AbiType & { kind: "struct" }): string {
+  const what = JSON.stringify(abi.fields.length ? `an object with ${abi.fields.map((field) => field.name).join(", ")}` : "an object");
+  const lines = [
+    `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const char* path) {`,
+    "  napi_valuetype type;",
+    "  bool is_array = false;",
+    "  napi_value field;",
+    "  char child[512];",
+    "  napi_typeof(env, value, &type);",
+    "  if (type == napi_object) napi_is_array(env, value, &is_array);",
+    `  if (type != napi_object || is_array) return ts_polyglot_fail(env, false, fn, path, ${what});`,
+  ];
+  for (const field of abi.fields) {
+    // A missing property reads as undefined, which the field's own reader rejects with the full path.
+    lines.push(`  snprintf(child, sizeof child, "%s.${field.name}", path);`, `  napi_get_named_property(env, value, ${JSON.stringify(field.name)}, &field);`);
+    lines.push(...readArgument(field.type, "field", `out->${field.member}`, "fn, child", "return false;").map((line) => `  ${line}`));
+  }
+  lines.push("  return true;", "}", "", `static napi_value ts_polyglot_make_${abi.name}(napi_env env, ${abi.c} value) {`, "  napi_value result;", "  napi_value field;", "  napi_create_object(env, &result);");
+  for (const field of abi.fields) {
+    lines.push(...makeResult(field.type, `value.${field.member}`, "field").map((line) => `  ${line}`), `  napi_set_named_property(env, result, ${JSON.stringify(field.name)}, field);`);
+  }
+  lines.push("  return result;", "}", "");
+  return lines.join("\n");
 }
 
 /** C that makes the JavaScript value `into` from the C expression `value`. */
@@ -269,18 +299,23 @@ export function makeResult(abi: AbiType, value: string, into: string): string[] 
       return [`${into} = ts_polyglot_make_cstring(env, ${value});`];
     case "string":
       return [`${into} = ts_polyglot_make_string(env, ${value});`];
+    case "struct":
+      return [`${into} = ts_polyglot_make_${abi.name}(env, ${value});`];
     default:
-      throw new Error(`ts-polyglot: ${abi.kind} results aren't marshaled yet`);
+      // Every kind is handled above; this keeps the function total if one is added.
+      throw new Error(`ts-polyglot: ${(abi as AbiType).kind} results aren't marshaled`);
   }
 }
 
-/** C that frees what reading `value` as an argument left owned: the copies of strings. Safe on a value that was never read. */
+/** C that frees what reading `value` as an argument left owned: the copies of strings, inside structs too. Safe on a value that was never read. */
 export function cleanup(abi: AbiType, value: string): string[] {
   switch (abi.kind) {
     case "cstring":
       return [`free((char*)${value});`];
     case "string":
       return [`free(${value}.ptr);`];
+    case "struct":
+      return abi.fields.flatMap((field) => cleanup(field.type, `${value}.${field.member}`));
     default:
       return [];
   }
