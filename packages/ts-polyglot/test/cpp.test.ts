@@ -33,9 +33,9 @@ test("templates are skipped and only the first overload is kept", () => {
 
 test("attributes, constexpr, noexcept and a trailing return type don't hide a function", () => {
   const [f, g] = find("[[nodiscard]] constexpr int f(int a) noexcept { return a; }\nauto g(int a) -> int { return a; }\n");
-  assert.equal(f?.returnType, "int");
+  assert.equal(f?.returns.spelling, "int");
   assert.equal(f?.signature, "int f(int a) noexcept");
-  assert.equal(g?.returnType, "int");
+  assert.equal(g?.returns.spelling, "int");
   assert.equal(g?.signature, "auto g(int a) -> int");
 });
 
@@ -45,7 +45,7 @@ test("auto without a trailing return type is skipped", () => {
 
 test("a default argument is a required parameter for now", () => {
   const [fn] = find("int f(int a, int b = 2) { return a + b; }");
-  assert.deepEqual(fn?.params.map((p) => [p.name, p.type]), [["a", "int"], ["b", "int"]]);
+  assert.deepEqual(fn?.params.map((p) => [p.name, p.type.spelling]), [["a", "int"], ["b", "int"]]);
 });
 
 test("references skip the function", () => {

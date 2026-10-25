@@ -1,5 +1,5 @@
-// The registry around the walkers: which functions and structs make it through `supported`, how
-// same-named functions are settled, and the legacy output today's glue and mapper still read.
+// The registry around the walkers: which functions and structs make it through `supported`, and how
+// same-named functions are settled.
 import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
@@ -22,7 +22,8 @@ test("Rust: a mod's functions and a 64-bit unsigned type are kept", () => {
   assert.deepEqual(functions.map((f) => f.callee), ["m::f"]); // g waits for strings to be marshaled
 });
 
-test("findFunctions keeps today's legacy output", () => {
+test("findFunctions is parseModule's functions", () => {
   const [fn] = findFunctions("long echo_long(long x) { return x; }", "c");
-  assert.equal(fn?.returns.c, "int64_t");
+  assert.equal(fn?.returns.spelling, "long");
+  assert.equal(fn?.returns.kind, "int");
 });

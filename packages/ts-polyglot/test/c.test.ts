@@ -27,9 +27,9 @@ test("a definition with names, offsets, spellings and the header as written", ()
   assert.equal(fn?.name, "add");
   assert.equal(fn?.callee, "add");
   assert.equal(fn?.nameStart, source.indexOf("add"));
-  assert.deepEqual(fn?.params.map((p) => [p.name, p.nameStart, p.type]), [["a", source.indexOf("a,"), "int"], ["b", source.indexOf("b)"), "int"]]);
-  assert.equal(fn?.returnType, "int");
-  assert.equal(fn?.returns.ts, "number");
+  assert.deepEqual(fn?.params.map((p) => [p.name, p.nameStart, p.type.spelling]), [["a", source.indexOf("a,"), "int"], ["b", source.indexOf("b)"), "int"]]);
+  assert.equal(fn?.returns.spelling, "int");
+  assert.equal(fn?.returns.kind, "int");
   assert.equal(fn?.signature, "int add(int a, int b)");
 });
 
@@ -45,15 +45,17 @@ test("unnamed parameters are arg<i> without an offset, and (void) is no paramete
 
 test("const and volatile qualifiers are dropped from a type", () => {
   const [fn] = find("int f(const int a, int const b, volatile int c) { return 0; }");
-  assert.deepEqual(fn?.params.map((p) => p.type), ["int", "int", "int"]);
+  assert.deepEqual(fn?.params.map((p) => p.type.spelling), ["int", "int", "int"]);
 });
 
 test("pointers, arrays, function pointers and variadics skip the function", () => {
   assert.deepEqual(find("int f(const char *s) { return 0; }\nint g(int a[]) { return 0; }\nint h(int (*cb)(int)) { return 0; }\nint v(int a, ...) { return 0; }\nint *p(int a) { return 0; }"), []);
 });
 
-test("an unknown type skips the function", () => {
-  assert.deepEqual(find("size_t f(int a) { return 0; }\nint g(size_t a) { return 0; }"), []);
+test("size_t crosses as a 64-bit unsigned integer; a name the file doesn't define is unknown and skips the function", () => {
+  const found = find("size_t f(int a) { return 0; }\nint g(size_t a) { return 0; }\nint h(mystery_t a) { return 0; }");
+  assert.deepEqual(found.map((fn) => fn.name), ["f", "g"]);
+  assert.deepEqual(found[0]?.returns, { kind: "int", bits: 64, signed: false, spelling: "size_t" });
 });
 
 test("prototypes without a body are not exported", () => {
@@ -73,8 +75,8 @@ test("__declspec and a calling convention don't hide a function", () => {
 
 test("sized types keep today's spellings", () => {
   const [fn] = find("unsigned   int f(long long x, unsigned short y) { return 0; }");
-  assert.equal(fn?.returnType, "unsigned int");
-  assert.deepEqual(fn?.params.map((p) => p.type), ["long long", "unsigned short"]);
+  assert.equal(fn?.returns.spelling, "unsigned int");
+  assert.deepEqual(fn?.params.map((p) => p.type.spelling), ["long long", "unsigned short"]);
 });
 
 test("a half-typed file keeps the functions before the break", () => {
@@ -173,9 +175,4 @@ test("a struct with a bitfield isn't plain; one with a pointer field is plain bu
   const { structs } = module("struct Bits { int x : 3; };\nstruct Ptr { const char* name; int* p; int a[2]; };\n");
   assert.deepEqual(structs.map((s) => s.name), ["Ptr"]);
   assert.deepEqual(structs[0]!.fields.map((f) => f.type.kind), ["string", "pointer", "array"]);
-});
-
-test("the legacy adapter still gives today's shape", () => {
-  const [fn] = find("long f(unsigned x) { return x; }");
-  assert.deepEqual([fn?.returnType, fn?.returns.c, fn?.params[0]?.type, fn?.params[0]?.kind.ts], ["long", "int64_t", "unsigned", "number"]);
 });

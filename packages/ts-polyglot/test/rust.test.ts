@@ -25,15 +25,15 @@ test("a pub fn with names, offsets, spellings and the header as written", () => 
   assert.equal(fn?.name, "fib");
   assert.equal(fn?.callee, "fib");
   assert.equal(fn?.nameStart, source.indexOf("fib"));
-  assert.deepEqual(fn?.params.map((p) => [p.name, p.nameStart, p.type]), [["n", source.indexOf("n:"), "u32"]]);
-  assert.equal(fn?.returnType, "i64");
+  assert.deepEqual(fn?.params.map((p) => [p.name, p.nameStart, p.type.spelling]), [["n", source.indexOf("n:"), "u32"]]);
+  assert.equal(fn?.returns.spelling, "i64");
   assert.equal(fn?.signature, "pub fn fib(n: u32) -> i64");
 });
 
 test("no return type is ()", () => {
   const [fn] = find("pub fn ping(x: i32) {}");
-  assert.equal(fn?.returnType, "()");
-  assert.equal(fn?.returns.ts, "void");
+  assert.equal(fn?.returns.spelling, "()");
+  assert.equal(fn?.returns.kind, "void");
 });
 
 test("private and pub(crate) functions stay private", () => {
@@ -119,9 +119,4 @@ test("structs that aren't plain: a private or pub(crate) field, tuple, unit, gen
 test("struct names resolve in the function's module, by relative path, crate:: and super::", () => {
   const { functions } = module("pub struct P { pub x: i32 }\npub mod geo { pub struct V { pub x: f32 } pub fn n(v: V) -> V { v } pub mod deep { pub fn d(v: super::V, p: crate::P) -> i32 { 0 } } }\npub fn m(v: geo::V, w: crate::geo::V) -> i32 { 0 }\npub fn bare(v: V) -> i32 { 0 }\n");
   assert.deepEqual(functions.map((f) => [f.name, ...f.params.map((p) => p.type.kind === "struct" ? p.type.name : p.type.kind)]), [["n", "V"], ["d", "V", "P"], ["m", "V", "V"], ["bare", "unknown"]]);
-});
-
-test("the legacy adapter still gives today's shape", () => {
-  const [fn] = find("pub fn fib(n: u32) -> i64 { 0 }");
-  assert.deepEqual([fn?.returnType, fn?.returns.rust, fn?.params[0]?.type], ["i64", "i64", "u32"]);
 });

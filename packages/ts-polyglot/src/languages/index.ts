@@ -3,7 +3,7 @@
 // it from its resolve. `parseModule` applies `supported` here, so a walker records what a type is and
 // the registry decides what the glue can carry.
 import { loadGrammar, parse } from "../parser.ts";
-import { supported, toLegacy, type LegacyFunction, type NativeModule } from "../signatures.ts";
+import { supported, type NativeFunction, type NativeModule } from "../signatures.ts";
 import { c } from "./c.ts";
 import { cpp } from "./cpp.ts";
 import type { Language, LanguageModule } from "./language.ts";
@@ -56,16 +56,7 @@ export function parseModule(source: string, language: Language): NativeModule {
   return module;
 }
 
-/** Today's shape for today's glue and mapper: the walker's output through `toLegacy`, the first of each name. */
-export function findFunctions(source: string, language: Language): LegacyFunction[] {
-  const seen = new Set<string>();
-  const legacy: LegacyFunction[] = [];
-  for (const fn of walk(source, language).functions) {
-    const converted = toLegacy(fn);
-    if (converted && !seen.has(converted.name)) {
-      seen.add(converted.name);
-      legacy.push(converted);
-    }
-  }
-  return legacy;
+/** The functions a file exports: `parseModule`'s, for callers that don't need the structs. */
+export function findFunctions(source: string, language: Language): NativeFunction[] {
+  return parseModule(source, language).functions;
 }
