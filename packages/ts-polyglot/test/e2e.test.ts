@@ -241,3 +241,23 @@ test("C arrays: every wrong input is a TypeError or RangeError with the path, a 
   assert.equal(output.bytesBuffer.error, "TypeError: checksum(): data must be a Uint8Array");
   assert.equal(output.detached.error, "TypeError: checksum(): data must be a Uint8Array that isn't detached");
 });
+
+test("C++ arrays: vectors, std::array tuples, nested vectors, byte vectors, vector<bool>, structs with vector fields, an exception midway", () => {
+  const { output } = run("project");
+  assert.deepEqual(output.evens, [2, 4]);
+  assert.deepEqual(output.evensEmpty, []);
+  assert.deepEqual(output.split, ["a", "bc", "d"]);
+  assert.deepEqual(output.cross, [0, 0, 1]);
+  assert.deepEqual(output.transpose, [[1, 4], [2, 5], [3, 6]]);
+  assert.deepEqual(output.reverseBytes, [3, 2, 1]);
+  assert.equal(output.reverseBytesIsU8, true);
+  assert.equal(output.countTrue, "2n");
+  assert.deepEqual(output.close, { pts: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 1, y: 2 }], name: "tri!" });
+  assert.deepEqual(output.closeEmpty, { pts: [], name: "!" });
+  assert.equal(output.throwsMidway.error, "Error: too many");
+  assert.deepEqual(output.throwsNotMidway, [1, 2]);
+  assert.equal(output.crossLength.error, "RangeError: cross(): a must have 3 elements");
+  assert.equal(output.nestedBad.error, "TypeError: transpose(): m[1][1] must be an integer between -2147483648 and 2147483647");
+  assert.equal(output.flagsBad.error, "TypeError: count_true(): flags[1] must be a boolean");
+  assert.equal(output.closeBad.error, "TypeError: close(): s.pts[1].y must be an integer between -2147483648 and 2147483647");
+});

@@ -6,6 +6,7 @@ import { dist, rename, shift } from "./points.rs";
 import { area, grow, retag } from "./shapes.c";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
 import { area as poly_area, checksum, count_a, dot, longest, mean, norm, relabel, total_pts, trace } from "./vectors.c";
+import { close, count_true, cross, evens, reverse_bytes, split, throws_midway, transpose } from "./vectors.cpp";
 
 // The fixture has no @types/node; a Buffer is a Uint8Array, which is all the glue needs to know.
 declare const Buffer: { from(bytes: number[]): Uint8Array };
@@ -118,6 +119,23 @@ const output = {
   bytesArray: attempt(() => checksum([1, 2] as never)),
   bytesBuffer: attempt(() => checksum(new ArrayBuffer(2) as never)),
   detached: attempt(() => { const b = new ArrayBuffer(4); const v = new Uint8Array(b); structuredClone(b, { transfer: [b] }); return checksum(v); }),
+  // C++ arrays.
+  evens: evens([1, 2, 3, 4]),
+  evensEmpty: evens([]),
+  split: split("a bc d"),
+  cross: cross([1, 0, 0], [0, 1, 0]),
+  transpose: transpose([[1, 2, 3], [4, 5, 6]]),
+  reverseBytes: Array.from(reverse_bytes(new Uint8Array([1, 2, 3]))),
+  reverseBytesIsU8: reverse_bytes(new Uint8Array([1])) instanceof Uint8Array && reverse_bytes(new Uint8Array([1])).constructor === Uint8Array,
+  countTrue: count_true([true, false, true]),
+  close: close({ pts: [{ x: 1, y: 2 }, { x: 3, y: 4 }], name: "tri" }),
+  closeEmpty: close({ pts: [], name: "" }),
+  throwsMidway: attempt(() => throws_midway([1, 2, 3])),
+  throwsNotMidway: throws_midway([1, 2]),
+  crossLength: attempt(() => cross([1, 0] as never, [0, 1, 0])),
+  nestedBad: attempt(() => transpose([[1, 2], [3, "x"]] as never)),
+  flagsBad: attempt(() => count_true([true, 1] as never)),
+  closeBad: attempt(() => close({ pts: [{ x: 1, y: 2 }, { x: 3 }], name: "t" } as never)),
 };
 
 // JSON has no bigint; print them with an `n` so the test can tell them from numbers.

@@ -152,3 +152,35 @@ test("a C sequence or fixed array whose elements need converting goes through a 
   assert.match(trace, /ts_polyglot_tmp_m\[i0\]\[i1\] = \(\(int const\*\)\(\(ts_polyglot_array const\*\)m\.ptr\)\[i0\]\.ptr\)\[i1\];/);
   assert.match(trace, /ts_polyglot_out = trace\(ts_polyglot_tmp_m\);/);
 });
+
+test("the C++ shim converts std::vector and std::array through the template family, in and out", () => {
+  const module = parseModule("#include <vector>\n#include <array>\nstd::vector<int> evens(const std::vector<int>& xs) { return xs; }\nstd::array<float, 3> cross(std::array<float, 3> a, const std::array<float, 3>& b) { return a; }\nstd::vector<std::vector<std::string>> grid(std::vector<std::vector<std::string>> m) { return m; }\n", "cpp");
+  const bridge = cppBridge(input("D:\\p\\v.cpp", module));
+  assert.match(bridge.prelude, /template <class T> struct ts_polyglot__conv<std::vector<T>> \{/);
+  assert.match(bridge.prelude, /template <class T, size_t N> struct ts_polyglot__abi<std::array<T, N>> \{ using type = ts_polyglot_array; \};/);
+  assert.match(cppShim(module.functions[0]!, module), /static ts_polyglot_array ts_polyglot__shim_evens\(ts_polyglot_array xs, ts_polyglot_string\* error\) \{\n  try \{ auto ts_polyglot_result = evens\(ts_polyglot__conv<std::vector<int>>::from\(xs\)\); return ts_polyglot__conv<std::vector<int>>::to\(ts_polyglot_result\); \}/);
+  assert.match(cppShim(module.functions[1]!, module), /cross\(ts_polyglot__conv<std::array<float, 3>>::from\(a\), ts_polyglot__conv<std::array<float, 3>>::from\(b\)\)/);
+  assert.match(cppShim(module.functions[2]!, module), /ts_polyglot__conv<std::vector<std::vector<std::string>>>::to\(ts_polyglot_result\)/);
+  assert.deepEqual(bridge.callee(module.functions[1]!).params.map((p) => p.kind === "array" && p.length), [3, 3]);
+  assert.match(cppShim(module.functions[0]!, module), /  return ts_polyglot_array\{\};\n\}/);
+});
+
+test("the C++ bridge mirrors a struct with a vector field and specializes the templates for it; C-style arrays and char[N] use the loops", () => {
+  const module = parseModule("#include <vector>\n#include <string>\nstruct Point { int x; int y; };\nstruct Shape { std::vector<Point> pts; std::string name; int c[2]; char tag[4]; };\nShape close(Shape s) { return s; }\n", "cpp");
+  const bridge = cppBridge(input("D:\\p\\v.cpp", module));
+  assert.match(bridge.prelude, /typedef struct \{ ts_polyglot_array pts; ts_polyglot_string name; ts_polyglot_array c; ts_polyglot_string tag; \} ts_polyglot_Shape;/);
+  assert.match(bridge.prelude, /v\.pts = ts_polyglot__conv<std::vector<Point>>::from\(m\.pts\);/);
+  assert.match(bridge.prelude, /m\.pts = ts_polyglot__conv<std::vector<Point>>::to\(v\.pts\);/);
+  assert.match(bridge.prelude, /v\.c\[i0\] = \(\(int const\*\)m\.c\.ptr\)\[i0\];/);
+  assert.match(bridge.prelude, /memcpy\(v\.tag, m\.tag\.ptr, m\.tag\.len\); v\.tag\[m\.tag\.len\] = 0;/);
+  assert.match(bridge.prelude, /m\.tag = ts_polyglot__own\(v\.tag, ts_polyglot__bounded\(v\.tag, 4\)\);/);
+  assert.match(bridge.prelude, /template <> struct ts_polyglot__abi<Shape> \{ using type = ts_polyglot_Shape; \};\ntemplate <> struct ts_polyglot__conv<Shape> \{ static Shape from\(const ts_polyglot_Shape& m\) \{ return ts_polyglot__from_Shape\(m\); \} static ts_polyglot_Shape to\(const Shape& v\) \{ return ts_polyglot__to_Shape\(v\); \} \};/);
+  assert.match(cppShim(module.functions[0]!, module), /auto ts_polyglot_result = close\(ts_polyglot__from_Shape\(s\)\); return ts_polyglot__to_Shape\(ts_polyglot_result\);/);
+});
+
+test("a C-style array parameter in C++ is cast when plain and converted through a vector when not", () => {
+  const module = parseModule("#include <string>\nstruct Named { char name[8]; int id; };\ndouble mean(const double xs[], size_t n) { return 0; }\nint ids(const Named items[], size_t n) { return 0; }\n", "cpp");
+  assert.match(cppShim(module.functions[0]!, module), /mean\(\(double const\*\)xs\.ptr, \(size_t\)xs\.len\)/);
+  assert.doesNotMatch(cppShim(module.functions[0]!, module), /SIZE_MAX/);
+  assert.match(cppShim(module.functions[1]!, module), /auto ts_polyglot_tmp_items = ts_polyglot__conv<std::vector<Named>>::from\(items\);[\s\S]*ids\(ts_polyglot_tmp_items\.data\(\), \(size_t\)items\.len\)/);
+});

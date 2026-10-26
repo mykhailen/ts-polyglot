@@ -28,6 +28,9 @@ export function cDeclarator(type: NativeType, name: string): string {
   return `${element.spelling} ${name}${dims.map((n) => `[${n}]`).join("")}`;
 }
 
+/** A C-style array (`T x[N]`, `T xs[]`) rather than a std container, which C++ converts through templates instead of these loops. */
+export const cStyleArray = (type: NativeType) => type.kind === "array" && type.spelling.endsWith("]");
+
 /** How many nested loops copying this type takes, so the caller can declare i0 to i(n-1). */
 export function loopDepth(abi: AbiType): number {
   return abi.kind === "array" ? 1 + loopDepth(abi.of) : 0;
