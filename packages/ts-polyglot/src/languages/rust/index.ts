@@ -7,7 +7,7 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../../parser.ts";
-import { oneLine, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../../signatures.ts";
+import { oneLine, parseIntegerLiteral, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../../signatures.ts";
 import type { LanguageModule } from "../language.ts";
 import { rustBridge } from "./bridge.ts";
 import { rustType } from "./types.ts";
@@ -22,6 +22,7 @@ export function rustModule(root: Node, source: string): NativeModule {
   const structs = new Structs();
   items(root, [], (node, path) => {
     if (node.type === "struct_item") structs.add(node, path);
+    if (node.type === "const_item") structs.constants.add(node, path);
   });
   structs.typeFields();
   const functions: NativeFunction[] = [];
@@ -53,8 +54,40 @@ function items(node: Node, path: readonly string[], each: (node: Node, path: rea
 
 const visibility = (node: Node) => node.namedChildren.find((n) => n.type === "visibility_modifier")?.text;
 
+/** Name resolution as far as one file goes: a bare name in the current module, a path relative to it and then from the root, `crate::` and `super::`. */
+function resolvePath<T>(byPath: Map<string, T>, spelling: string, scope: readonly string[]): T | undefined {
+  const segments = spelling.split("::");
+  if (segments[0] === "crate") return byPath.get(segments.slice(1).join("::"));
+  if (segments[0] === "super") {
+    const base = [...scope];
+    let i = 0;
+    for (; segments[i] === "super"; i++) base.pop();
+    return byPath.get([...base, ...segments.slice(i)].join("::"));
+  }
+  return byPath.get([...scope, ...segments].join("::")) ?? (segments.length > 1 ? byPath.get(spelling) : undefined);
+}
+
+/** An integer `const` item the file defines, which an array size may name. Anything else as a size is unreadable. */
+class Constants {
+  private readonly byPath = new Map<string, number>();
+
+  add(node: Node, path: readonly string[]): void {
+    const name = node.childForFieldName("name");
+    const value = node.childForFieldName("value");
+    const literal = value?.type === "integer_literal" ? parseIntegerLiteral(value.text, "rust") : undefined;
+    const key = name ? [...path, name.text].join("::") : "";
+    if (name && literal !== undefined && !this.byPath.has(key)) this.byPath.set(key, literal);
+  }
+
+  resolve(spelling: string, scope: readonly string[]): number | undefined {
+    return resolvePath(this.byPath, spelling, scope);
+  }
+}
+
 class Structs {
   readonly all: NativeStruct[] = [];
+  // Collected in the same pass and resolved the same way, so the one object travels with the structs.
+  readonly constants = new Constants();
   // Keyed by module path: `geo::V`.
   private readonly byPath = new Map<string, NativeStruct>();
   private readonly pending: { struct: NativeStruct; body: Node }[] = [];
@@ -87,17 +120,8 @@ class Structs {
     }
   }
 
-  /** Name resolution as far as one file goes: a bare name in the current module, a path relative to it and then from the root, `crate::` and `super::`. */
   resolve(spelling: string, scope: readonly string[]): NativeStruct | undefined {
-    const segments = spelling.split("::");
-    if (segments[0] === "crate") return this.byPath.get(segments.slice(1).join("::"));
-    if (segments[0] === "super") {
-      const base = [...scope];
-      let i = 0;
-      for (; segments[i] === "super"; i++) base.pop();
-      return this.byPath.get([...base, ...segments.slice(i)].join("::"));
-    }
-    return this.byPath.get([...scope, ...segments].join("::")) ?? (segments.length > 1 ? this.byPath.get(spelling) : undefined);
+    return resolvePath(this.byPath, spelling, scope);
   }
 }
 
@@ -136,10 +160,20 @@ function typeOf(node: Node, scope: readonly string[], structs: Structs, isResult
       const element = node.childForFieldName("element");
       const length = node.childForFieldName("length");
       const of: NativeType = element ? typeOf(element, scope, structs, false) : { kind: "unknown", spelling };
-      return length && /^\d+$/.test(length.text) ? { kind: "array", of, length: Number(length.text), spelling } : { kind: "array", of, spelling };
+      // `[T]` is a slice, only ever behind a reference. A size is a literal or a const the file defines; anything else is unreadable.
+      if (!length) return { kind: "array", of, spelling };
+      const size = length.type === "integer_literal" ? parseIntegerLiteral(length.text, "rust") : length.type === "identifier" || length.type === "scoped_identifier" ? structs.constants.resolve(length.text, scope) : undefined;
+      return size === undefined ? { kind: "unknown", spelling } : { kind: "array", of, length: size, spelling };
+    }
+    case "generic_type": {
+      // `Vec<T>`, by that name or by its full path. Every other generic has no shape in the model.
+      const base = node.childForFieldName("type")?.text;
+      const args = node.childForFieldName("type_arguments")?.namedChildren.filter((n) => !COMMENTS.includes(n.type)) ?? [];
+      if ((base !== "Vec" && base !== "std::vec::Vec") || args.length !== 1) return { kind: "unknown", spelling };
+      return { kind: "array", of: typeOf(args[0]!, scope, structs, false), spelling };
     }
     default:
-      // Generics, tuples, function types, `dyn` and `impl`: nothing the model has a shape for.
+      // Tuples, function types, `dyn` and `impl`: nothing the model has a shape for.
       return { kind: "unknown", spelling };
   }
 }

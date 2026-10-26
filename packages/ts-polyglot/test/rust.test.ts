@@ -61,8 +61,8 @@ test("pub mod nesting gives a module path callee; a private mod hides its functi
   assert.deepEqual(found.map((f) => [f.name, f.callee]), [["deep", "outer::inner::deep"], ["s", "seen::s"]]);
 });
 
-test("strings cross; a Vec doesn't, and skips its function", () => {
-  assert.deepEqual(find("pub fn s(x: &str) -> i32 { 0 }\npub fn v(x: Vec<u8>) -> i32 { 0 }\npub fn r(x: i32) -> String { String::new() }").map((f) => f.name), ["s", "r"]);
+test("strings and Vecs cross; a HashMap doesn't, and skips its function", () => {
+  assert.deepEqual(find("pub fn s(x: &str) -> i32 { 0 }\npub fn v(x: Vec<u8>) -> i32 { 0 }\npub fn h(m: std::collections::HashMap<i32, i32>) -> i32 { 0 }\npub fn r(x: i32) -> String { String::new() }").map((f) => f.name), ["s", "v", "r"]);
 });
 
 test("a half-typed file keeps the functions before the break", () => {
@@ -119,4 +119,27 @@ test("structs that aren't plain: a private or pub(crate) field, tuple, unit, gen
 test("struct names resolve in the function's module, by relative path, crate:: and super::", () => {
   const { functions } = module("pub struct P { pub x: i32 }\npub mod geo { pub struct V { pub x: f32 } pub fn n(v: V) -> V { v } pub mod deep { pub fn d(v: super::V, p: crate::P) -> i32 { 0 } } }\npub fn m(v: geo::V, w: crate::geo::V) -> i32 { 0 }\npub fn bare(v: V) -> i32 { 0 }\n");
   assert.deepEqual(functions.map((f) => [f.name, ...f.params.map((p) => p.type.kind === "struct" ? p.type.name : p.type.kind)]), [["n", "V"], ["d", "V", "P"], ["m", "V", "V"], ["bare", "unknown"]]);
+});
+
+test("Vec, slices and arrays are arrays, with sizes from literals in any base and from same-file consts", () => {
+  const [a, b, c, d, e, g, h] = types("pub const N: usize = 3;\npub fn f(a: &[i32], b: Vec<String>, c: [f32; 3], d: &[u8; 0x10], e: std::vec::Vec<i64>, g: [f32; N], h: Vec<Vec<char>>) {}\n");
+  assert.deepEqual(a, { kind: "reference", mutable: false, spelling: "&[i32]", to: { kind: "array", spelling: "[i32]", of: { kind: "int", bits: 32, signed: true, spelling: "i32" } } });
+  assert.deepEqual(b, { kind: "array", spelling: "Vec<String>", of: { kind: "string", nullable: false, spelling: "String" } });
+  assert.deepEqual(c, { kind: "array", length: 3, spelling: "[f32; 3]", of: { kind: "float", bits: 32, spelling: "f32" } });
+  assert.deepEqual((d as { to: NativeType }).to, { kind: "array", length: 16, spelling: "[u8; 0x10]", of: { kind: "int", bits: 8, signed: false, spelling: "u8" } });
+  assert.deepEqual((e as { of: NativeType }).of.spelling, "i64");
+  assert.equal((g as { length?: number }).length, 3);
+  assert.deepEqual(h, { kind: "array", spelling: "Vec<Vec<char>>", of: { kind: "array", spelling: "Vec<char>", of: { kind: "char", spelling: "char" } } });
+});
+
+test("sizes that aren't literals or same-file consts, Box<[T]>, Option<Vec<T>>, &[&str], &mut [T] and a borrowed slice result stay hidden", () => {
+  assert.deepEqual(find("pub fn a(v: [f32; 2 + 1]) {}\npub fn b(v: [f32; M]) {}\npub fn c(v: Box<[u8]>) {}\npub fn d(v: Option<Vec<i32>>) {}\npub fn e(v: &[&str]) {}\npub fn f(v: &mut [i32]) {}\npub fn g(v: &[i32]) -> &[i32] { v }\n"), []);
+  assert.equal(types("pub fn a(v: [f32; 2 + 1]) {}")[0]!.kind, "unknown");
+});
+
+test("struct fields of Vec, array and nested array types; a const in a pub mod resolves there", () => {
+  const { structs, functions } = module("pub mod m {\n    pub const K: usize = 2;\n    pub struct S { pub xs: Vec<i32>, pub a: [u8; K], pub n: Vec<[f32; 2]> }\n    pub fn f(s: S) -> &'static [u8] { &[] }\n}\n");
+  assert.deepEqual(structs[0]!.fields.map((f) => [f.name, f.type.kind, (f.type as { length?: number }).length]), [["xs", "array", undefined], ["a", "array", 2], ["n", "array", undefined]]);
+  assert.deepEqual((structs[0]!.fields[2]!.type as { of: NativeType }).of, { kind: "array", length: 2, spelling: "[f32; 2]", of: { kind: "float", bits: 32, spelling: "f32" } });
+  assert.deepEqual(functions[0]!.returns, { kind: "reference", mutable: false, spelling: "&'static [u8]", to: { kind: "array", spelling: "[u8]", of: { kind: "int", bits: 8, signed: false, spelling: "u8" } } });
 });
