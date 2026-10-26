@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { abiId, type AbiType } from "../src/languages/language.ts";
 import { jsType, structHelpers } from "../src/marshal.ts";
 import type { NativeType } from "../src/signatures.ts";
 
@@ -22,4 +23,14 @@ test("a struct reader initializes the property slot and stops when the getter th
   const text = structHelpers({ kind: "struct", c: "struct Point", name: "Point", fields: [{ name: "x", member: "x", type: { kind: "int", c: "int", bits: 32, signed: true, min: "INT_MIN", max: "INT_MAX" } }] });
   assert.match(text, /napi_value field = NULL;/);
   assert.match(text, /if \(napi_get_named_property\(env, value, "x", &field\) != napi_ok\) return false;/);
+});
+
+test("abiId tells element types apart by C spelling, kind, bound and length", () => {
+  const i = (c: string): AbiType => ({ kind: "int", c, bits: 64, signed: true, min: "0", max: "1" });
+  assert.deepEqual([i("long"), i("unsigned long"), i("int64_t"), { kind: "float", c: "double", bits: 64 }, { kind: "bool", c: "bool" }, { kind: "char", c: "uint32_t" }, { kind: "cstring", c: "const char*" }, { kind: "string", c: "ts_polyglot_string" }, { kind: "string", c: "ts_polyglot_string", max: 15 }].map((a) => abiId(a as AbiType)), ["int_long", "int_unsigned_long", "int_int64_t", "float_double", "bool", "char", "cstring", "string", "string_15"]);
+  const point: AbiType = { kind: "struct", c: "struct Point", name: "Point", fields: [] };
+  assert.equal(abiId(point), "struct_struct_Point");
+  assert.equal(abiId({ kind: "array", c: "ts_polyglot_array", of: i("int32_t") }), "array_int_int32_t");
+  assert.equal(abiId({ kind: "array", c: "ts_polyglot_array", of: { kind: "float", c: "float", bits: 32 }, length: 3 }), "array_3_float_float");
+  assert.equal(abiId({ kind: "array", c: "ts_polyglot_array", of: { kind: "array", c: "ts_polyglot_array", of: point } }), "array_array_struct_struct_Point");
 });

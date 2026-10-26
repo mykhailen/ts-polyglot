@@ -12,8 +12,9 @@ export type NativeType = { spelling: string } & (
   | { kind: "float"; bits: 32 | 64 }
   // Rust's char: one Unicode scalar value.
   | { kind: "char" }
-  // nullable: C's `const char*`, which may be NULL.
-  | { kind: "string"; nullable: boolean }
+  // nullable: C's `const char*`, which may be NULL. max: a bound in UTF-8 bytes, for a C `char[N]`
+  // field or parameter, which holds N - 1 of them before its NUL.
+  | { kind: "string"; nullable: boolean; max?: number }
   // By its TypeScript name; the definition is in NativeModule.structs.
   | { kind: "struct"; name: string }
   | { kind: "reference"; to: NativeType; mutable: boolean }
@@ -46,6 +47,12 @@ export interface Param {
   /** String index of the name in the source; missing for an unnamed C parameter. */
   nameStart?: number;
   type: NativeType;
+  /**
+   * C and C++ only: the parameter that carries this array's (or counted string's) length. It stays
+   * in `params` at its native position, for the bridge's call; `visibleParams` hides it from
+   * JavaScript, which passes the array alone.
+   */
+  length?: { name: string; type: NativeType };
 }
 
 export interface NativeFunction {
@@ -65,6 +72,30 @@ export interface NativeModule {
   structs: NativeStruct[];
 }
 
+/** The parameters JavaScript passes: every one that isn't another's length. The glue and the declarations use this list; a bridge's shim walks the full one. */
+export function visibleParams(fn: NativeFunction): Param[] {
+  const lengths = new Set(fn.params.flatMap((param) => (param.length ? [param.length.name] : [])));
+  return fn.params.filter((param) => !lengths.has(param.name));
+}
+
+/**
+ * An array size as C or Rust spells it: any base, Rust's `_` separators, either language's suffixes.
+ * Undefined for anything else (a name, an expression, a float, zero), which the walkers turn into
+ * `unknown` rather than guess at.
+ */
+export function parseIntegerLiteral(text: string, language: "c" | "rust"): number | undefined {
+  const digits = language === "rust" ? text.trim().replace(/_/g, "").replace(/[ui](8|16|32|64|128|size)$/, "") : text.trim().replace(/[uUlL]+$/, "");
+  let value: number;
+  if (/^0[xX][0-9a-fA-F]+$/.test(digits)) value = parseInt(digits.slice(2), 16);
+  else if (language === "rust" && /^0o[0-7]+$/.test(digits)) value = parseInt(digits.slice(2), 8);
+  else if (language === "rust" && /^0b[01]+$/.test(digits)) value = parseInt(digits.slice(2), 2);
+  // A leading zero is octal in C; Rust has no such rule.
+  else if (language === "c" && /^0[0-7]+$/.test(digits)) value = parseInt(digits, 8);
+  else if (/^[0-9]+$/.test(digits)) value = Number(digits);
+  else return undefined;
+  return Number.isSafeInteger(value) && value >= 1 ? value : undefined;
+}
+
 /**
  * Whether the glue marshals a value of this type. An immutable reference crosses by value, with the
  * callee borrowing the glue's copy for the call. A struct crosses when the module defines it and every
@@ -81,6 +112,9 @@ export function supported(type: NativeType, module: NativeModule, visiting: Set<
       return true;
     case "reference":
       return !type.mutable && supported(type.to, module, visiting);
+    // An element can't be a reference (nothing owns what it would borrow) or void.
+    case "array":
+      return type.of.kind !== "reference" && type.of.kind !== "void" && supported(type.of, module, visiting);
     case "struct": {
       // No language lets a struct hold itself by value; the set guards the walk anyway.
       if (visiting.has(type.name)) return false;
@@ -106,7 +140,7 @@ export function structsInDependencyOrder(module: NativeModule): NativeStruct[] {
     const struct = module.structs.find((candidate) => candidate.name === name);
     if (!struct) return;
     for (const field of struct.fields) {
-      const type = field.type.kind === "reference" ? field.type.to : field.type;
+      const type = innermost(field.type);
       if (type.kind === "struct") visit(type.name);
     }
     ordered.push(struct);
@@ -114,6 +148,9 @@ export function structsInDependencyOrder(module: NativeModule): NativeStruct[] {
   for (const struct of module.structs) visit(struct.name);
   return ordered;
 }
+
+/** The type behind any depth of references and array elements: what a field ultimately holds. */
+const innermost = (type: NativeType): NativeType => (type.kind === "reference" ? innermost(type.to) : type.kind === "array" ? innermost(type.of) : type);
 
 /** Whitespace collapsed to single spaces and trimmed: a type or a header as one line. */
 export const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();

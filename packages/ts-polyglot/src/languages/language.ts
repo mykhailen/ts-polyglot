@@ -60,9 +60,35 @@ export type AbiType = { c: string } & (
   | { kind: "char" }
   // A raw `const char*`, which may be NULL.
   | { kind: "cstring" }
-  // ts_polyglot_string, the glue's own shape for text.
-  | { kind: "string" }
+  // ts_polyglot_string, the glue's own shape for text. With max, the glue rejects more UTF-8 bytes
+  // than that and any NUL: the bridge copies it into a C `char[max + 1]`.
+  | { kind: "string"; max?: number }
   // `name` is the TypeScript name, which the glue's reader and maker are named after; a field's
   // `member` is its C member, which a bridge may spell differently from the JavaScript property.
   | { kind: "struct"; name: string; fields: { name: string; member: string; type: AbiType }[] }
+  // ts_polyglot_array: `len` contiguous elements of `of`'s C type behind `ptr`. `length` is a fixed
+  // size the glue enforces; without it any length crosses.
+  | { kind: "array"; of: AbiType; length?: number }
 );
+
+/**
+ * A C identifier fragment unique to an AbiType, for the glue's per-type helpers. It is built from
+ * what a helper depends on, the C spelling rather than the class: `long` and `int64_t` share a class
+ * but not a size on Windows, and a code point and a `uint32_t` share a C type but not a reader.
+ */
+export function abiId(abi: AbiType): string {
+  const sanitized = (c: string) => c.replace(/[^A-Za-z0-9_]/g, "_");
+  switch (abi.kind) {
+    case "int":
+    case "float":
+      return `${abi.kind}_${sanitized(abi.c)}`;
+    case "string":
+      return abi.max === undefined ? "string" : `string_${abi.max}`;
+    case "struct":
+      return `struct_${sanitized(abi.c)}`;
+    case "array":
+      return `array_${abi.length === undefined ? "" : `${abi.length}_`}${abiId(abi.of)}`;
+    default:
+      return abi.kind;
+  }
+}

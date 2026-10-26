@@ -4,7 +4,7 @@
 // slot, makes the result and cleans up on every path.
 import type { AbiType, Bridge, Callee } from "./languages/language.ts";
 import { ABI_HEADER, HELPERS, cleanup, makeResult, readArgument, structHelpers } from "./marshal.ts";
-import type { NativeFunction, NativeModule } from "./signatures.ts";
+import { visibleParams, type NativeFunction, type NativeModule } from "./signatures.ts";
 
 export function glueSource(module: NativeModule, bridge: Bridge): string {
   const callees = module.functions.map((fn) => bridge.callee(fn));
@@ -52,7 +52,9 @@ function structs(callees: Callee[]): (AbiType & { kind: "struct" })[] {
 }
 
 function wrapper(fn: NativeFunction, callee: Callee): string[] {
-  const count = fn.params.length;
+  // A C length parameter isn't passed from JavaScript: the callee's parameters align with the visible ones.
+  const params = visibleParams(fn);
+  const count = params.length;
   const indent = (code: string[]) => code.map((line) => `  ${line}`);
   // Every local is declared up front, zero-initialized, so `goto fail` from any point is legal in C++
   // too and the cleanup below sees what was and wasn't set. The names are prefixed so a user function
@@ -68,7 +70,7 @@ function wrapper(fn: NativeFunction, callee: Callee): string[] {
     "  napi_get_cb_info(env, info, &ts_argc, ts_argv, NULL, NULL);",
     `  if (ts_argc < ${count}) { napi_throw_type_error(env, NULL, "${fn.name}() expects ${count} argument(s)"); goto fail; }`,
   ];
-  fn.params.forEach((param, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, `${JSON.stringify(fn.name)}, ${JSON.stringify(param.name)}`))));
+  params.forEach((param, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, `${JSON.stringify(fn.name)}, ${JSON.stringify(param.name)}`))));
   const call = `${callee.name}(${[...callee.params.map((_, i) => `arg${i}`), ...(callee.reportsErrors ? ["&ts_error"] : [])].join(", ")})`;
   lines.push(callee.returns.kind === "void" ? `  ${call};` : `  ts_value = ${call};`);
   if (callee.reportsErrors) lines.push("  if (ts_error.ptr) { ts_polyglot_throw_slot(env, ts_error); goto fail; }");

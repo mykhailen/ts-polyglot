@@ -5,6 +5,7 @@ import { basename } from "node:path";
 import { languageOf, parseModule } from "./languages/index.ts";
 import { jsType } from "./marshal.ts";
 import { SpanMapKind, type SpanMapping, type TransformResult } from "./protocol.ts";
+import { visibleParams } from "./signatures.ts";
 
 export function toDeclarations(fileName: string, source: string): TransformResult {
   const language = languageOf(fileName);
@@ -41,7 +42,8 @@ export function toDeclarations(fileName: string, source: string): TransformResul
     text += "export declare function ";
     verbatim(fn.nameStart, fn.name);
     text += "(";
-    fn.params.forEach((param, index) => {
+    // A C length parameter has no TypeScript counterpart, and so no span.
+    visibleParams(fn).forEach((param, index) => {
       if (index > 0) text += ", ";
       if (param.nameStart === undefined) text += param.name;
       else verbatim(param.nameStart, param.name);
