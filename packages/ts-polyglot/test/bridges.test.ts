@@ -28,7 +28,7 @@ test("the C++ bridge wraps each function in a shim that catches exceptions", () 
   const module = parseModule('#include <stdexcept>\nint throws(int x) { throw std::runtime_error("boom"); }\nnamespace geometry { void tick(const int& a) {} }\n', "cpp");
   const bridge = cppBridge(input("D:\\p\\add.cpp", module));
   assert.match(bridge.prelude, /^#include "D:\/p\/add\.cpp"/m);
-  assert.match(bridge.prelude, /static int ts_polyglot__shim_throws\(int x, ts_polyglot_string\* error\) \{\n  try \{ return throws\(x\); \}\n  catch \(const std::exception& e\) \{ \*error = ts_polyglot__own\(e\.what\(\)\); \}\n  catch \(\.\.\.\) \{ \*error = ts_polyglot__own\("throws\(\) threw an exception"\); \}\n  return int\{\};\n\}/);
+  assert.match(bridge.prelude, /static int ts_polyglot__shim_throws\(int x, ts_polyglot_string\* error\) \{\n  try \{ return throws\(x\); \}\n  catch \(const std::exception& e\) \{ \*error = ts_polyglot__own\(e\.what\(\)\); \}\n  catch \(\.\.\.\) \{ \*error = ts_polyglot__own\("throws\(\) threw an exception"\); \}\n  return \{\};\n\}/);
   assert.match(bridge.prelude, /static void ts_polyglot__shim_tick\(int a, ts_polyglot_string\* error\) \{\n  try \{ geometry::tick\(a\); \}/);
   assert.deepEqual(bridge.callee(module.functions[0]!), { name: "ts_polyglot__shim_throws", params: [{ kind: "int", c: "int", bits: 32, signed: true, min: "INT_MIN", max: "INT_MAX" }], returns: { kind: "int", c: "int", bits: 32, signed: true, min: "INT_MIN", max: "INT_MAX" }, reportsErrors: true });
 });
@@ -162,7 +162,28 @@ test("the C++ shim converts std::vector and std::array through the template fami
   assert.match(cppShim(module.functions[1]!, module), /cross\(ts_polyglot__conv<std::array<float, 3>>::from\(a\), ts_polyglot__conv<std::array<float, 3>>::from\(b\)\)/);
   assert.match(cppShim(module.functions[2]!, module), /ts_polyglot__conv<std::vector<std::vector<std::string>>>::to\(ts_polyglot_result\)/);
   assert.deepEqual(bridge.callee(module.functions[1]!).params.map((p) => p.kind === "array" && p.length), [3, 3]);
-  assert.match(cppShim(module.functions[0]!, module), /  return ts_polyglot_array\{\};\n\}/);
+  assert.match(cppShim(module.functions[0]!, module), /  return \{\};\n\}/);
+});
+
+test("the C++ shim's fallback return is valid for a multi-word type and a pointer", () => {
+  const module = parseModule("unsigned long u(unsigned long x) { return x; }\nconst char* s(void) { return 0; }\n", "cpp");
+  assert.match(cppShim(module.functions[0]!, module), /static unsigned long ts_polyglot__shim_u\(unsigned long x, ts_polyglot_string\* error\) \{[\s\S]*  return \{\};\n\}/);
+  assert.match(cppShim(module.functions[1]!, module), /  return \{\};\n\}/);
+});
+
+test("C++ C-style arrays of std types convert element by element in mirrors and shims", () => {
+  const module = parseModule("#include <string>\n#include <vector>\nstruct Tagged { std::string tags[2]; std::vector<int> rows[2]; };\nTagged tag_up(Tagged t) { return t; }\nint total(const std::string ns[], size_t n) { return 0; }\n", "cpp");
+  const bridge = cppBridge(input("D:\\p\\v.cpp", module));
+  assert.match(bridge.prelude, /v\.tags\[i0\] = std::string\(\(\(ts_polyglot_string const\*\)m\.tags\.ptr\)\[i0\]\.ptr, \(\(ts_polyglot_string const\*\)m\.tags\.ptr\)\[i0\]\.len\);/);
+  assert.match(bridge.prelude, /\(\(ts_polyglot_string\*\)m\.tags\.ptr\)\[i0\] = ts_polyglot__own\(v\.tags\[i0\]\.data\(\), v\.tags\[i0\]\.size\(\)\);/);
+  assert.match(bridge.prelude, /v\.rows\[i0\] = ts_polyglot__conv<std::vector<int>>::from\(\(\(ts_polyglot_array const\*\)m\.rows\.ptr\)\[i0\]\);/);
+  assert.match(bridge.prelude, /\(\(ts_polyglot_array\*\)m\.rows\.ptr\)\[i0\] = ts_polyglot__conv<std::vector<int>>::to\(v\.rows\[i0\]\);/);
+  assert.match(cppShim(module.functions[1]!, module), /auto ts_polyglot_tmp_ns = ts_polyglot__conv<std::vector<std::string>>::from\(ns\);[\s\S]*total\(ts_polyglot_tmp_ns\.data\(\), \(size_t\)ns\.len\)/);
+});
+
+test("the C99 spelling passes the length where the parameter sits", () => {
+  const module = parseModule("double mean99(size_t n, const double xs[n]) { return 0; }\n", "c");
+  assert.match(cShim(module.functions[0]!, module), /mean99\(\(size_t\)xs\.len, \(double const\*\)xs\.ptr\)/);
 });
 
 test("the C++ bridge mirrors a struct with a vector field and specializes the templates for it; C-style arrays and char[N] use the loops", () => {

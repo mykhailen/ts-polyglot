@@ -105,6 +105,13 @@ test("std::vector and std::array are arrays when qualified; span, a using'd vect
   assert.deepEqual(k!.params.map((p) => (p.type.kind === "array" ? p.type.length : p.type.kind)), [2, "unknown", "unknown"]);
 });
 
+test("a C-style array of std types keeps the container's spelling whole", () => {
+  const { structs, functions } = module("#include <string>\n#include <vector>\nstruct S { std::string names[2]; std::vector<int> rows[2]; std::array<int, 2> grid[3]; };\nint g(const std::string ns[], size_t n) { return 0; }\n");
+  assert.deepEqual(structs[0]!.fields.map((f) => f.type.spelling), ["std::string[2]", "std::vector<int>[2]", "std::array<int, 2>[3]"]);
+  assert.deepEqual((structs[0]!.fields[1]!.type as { of: NativeType }).of.spelling, "std::vector<int>");
+  assert.deepEqual(functions[0]!.params.map((p) => [p.type.kind, p.length?.name]), [["array", "n"], ["int", undefined]]);
+});
+
 test("a vector of a struct resolves the element in scope; a mutable vector reference is mutable", () => {
   const [f] = module("namespace geo { struct P { int x; }; int f(const std::vector<P>& ps, std::vector<P>& out) { return 0; } }\n").functions;
   assert.deepEqual(f!.params[0]!.type, { kind: "reference", mutable: false, spelling: "const std::vector<P>&", to: { kind: "array", spelling: "std::vector<P>", of: { kind: "struct", name: "P", spelling: "P" } } });

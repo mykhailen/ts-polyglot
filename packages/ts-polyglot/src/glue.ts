@@ -71,12 +71,14 @@ function wrapper(fn: NativeFunction, callee: Callee): string[] {
     `  napi_value ts_argv[${Math.max(count, 1)}];`,
     "  napi_value ts_result = NULL;",
     ...callee.params.map((abi, i) => `  ${abi.c} arg${i} = {0};`),
+    // The root of each argument's path for messages: its name, with fields and indexes chained below it.
+    ...params.map((param, i) => `  ts_polyglot_path ts_path${i} = { NULL, ${JSON.stringify(param.name)}, 0 };`),
     ...(callee.reportsErrors ? ["  ts_polyglot_string ts_error = {0};"] : []),
     ...(callee.returns.kind === "void" ? [] : [`  ${callee.returns.c} ts_value = {0};`]),
     "  napi_get_cb_info(env, info, &ts_argc, ts_argv, NULL, NULL);",
     `  if (ts_argc < ${count}) { napi_throw_type_error(env, NULL, "${fn.name}() expects ${count} argument(s)"); goto fail; }`,
   ];
-  params.forEach((param, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, `${JSON.stringify(fn.name)}, ${JSON.stringify(param.name)}`))));
+  params.forEach((_, i) => lines.push(...indent(readArgument(callee.params[i]!, `ts_argv[${i}]`, `arg${i}`, `${JSON.stringify(fn.name)}, &ts_path${i}`))));
   const call = `${callee.name}(${[...callee.params.map((_, i) => `arg${i}`), ...(callee.reportsErrors ? ["&ts_error"] : [])].join(", ")})`;
   lines.push(callee.returns.kind === "void" ? `  ${call};` : `  ts_value = ${call};`);
   if (callee.reportsErrors) lines.push("  if (ts_error.ptr) { ts_polyglot_throw_slot(env, ts_error); goto fail; }");

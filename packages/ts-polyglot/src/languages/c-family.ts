@@ -99,12 +99,14 @@ class Constants {
   }
 }
 
-/** A `#define NAME <literal>` or a `const`/`constexpr` variable with a literal initializer, parentheses allowed around either. */
+/** A `#define NAME <literal>` or a `const`/`constexpr` variable with a literal initializer, parentheses allowed around either, a comment after a define too. */
 function collectConstant(node: Node, path: readonly string[], constants: Constants): void {
   if (node.type === "preproc_def") {
     const name = node.childForFieldName("name");
     const value = node.childForFieldName("value");
-    const literal = value ? parseIntegerLiteral(value.text.trim().replace(/^\((.*)\)$/, "$1"), "c") : undefined;
+    // The define's value is the rest of the line, comments included.
+    const text = value?.text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/.*$/, "").trim().replace(/^\((.*)\)$/, "$1").trim();
+    const literal = text ? parseIntegerLiteral(text, "c") : undefined;
     if (name && literal !== undefined) constants.add(name.text, path, literal);
   } else if (node.type === "declaration" && node.namedChildren.some((child) => child.type === "type_qualifier" && /^(const|constexpr)$/.test(child.text))) {
     for (const declarator of node.childrenForFieldName("declarator")) {
@@ -347,8 +349,9 @@ function declared(base: NativeType, baseConst: boolean, declarator: Node | null,
       case "array_declarator":
       case "abstract_array_declarator": {
         const size = node.childForFieldName("size");
-        // The chain is walked outermost first but `a[2][3]` is read inner first, so a new dimension goes before the ones already there.
-        const dims = type.kind === "array" ? type.spelling.indexOf("[") : type.spelling.length;
+        // The chain is walked outermost first but `a[2][3]` is read inner first, so a new dimension goes
+        // before the ones already there; a std container's brackets are its template's, not dimensions.
+        const dims = type.kind === "array" && cStyle(type) ? type.spelling.indexOf("[") : type.spelling.length;
         const spelling = `${type.spelling.slice(0, dims)}[${size?.text ?? ""}]${type.spelling.slice(dims)}`;
         const length = !size ? undefined : size.type === "number_literal" ? parseIntegerLiteral(size.text, "c") : size.type === "identifier" && sizes.parameter?.(size.text) ? undefined : size.type === "identifier" ? sizes.constant(size.text) : undefined;
         if (size && length === undefined && !(size.type === "identifier" && sizes.parameter?.(size.text))) unreadable = true;

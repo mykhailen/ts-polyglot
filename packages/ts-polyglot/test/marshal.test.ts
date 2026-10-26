@@ -65,20 +65,34 @@ const list = (of: AbiType, length?: number): AbiType & { kind: "array" } => ({ k
 
 test("the ABI header and the helpers carry the array type, the bytes path and the bounded string", () => {
   assert.match(ABI_HEADER, /typedef struct \{ void\* ptr; size_t len; void \(\*release\)\(void\*, size_t\); \} ts_polyglot_array;/);
-  assert.match(HELPERS, /static bool ts_polyglot_read_bytes\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const char\* path\)/);
+  assert.match(HELPERS, /static bool ts_polyglot_read_bytes\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const ts_polyglot_path\* path\)/);
   assert.match(HELPERS, /if \(type != napi_uint8_array\) return ts_polyglot_fail\(env, false, fn, path, "a Uint8Array"\);/);
   assert.match(HELPERS, /"a Uint8Array that isn't detached"/);
-  assert.match(HELPERS, /static bool ts_polyglot_read_string\(napi_env env, napi_value value, ts_polyglot_string\* out, size_t max, const char\* fn, const char\* path\)/);
+  // Copied, not lent: a getter run while a later argument is read could detach or resize the buffer.
+  assert.match(HELPERS, /out->ptr = ts_polyglot_alloc\(length, 1\);[\s\S]*if \(length\) memcpy\(out->ptr, data, length\);/);
+  assert.match(HELPERS, /static bool ts_polyglot_read_string\(napi_env env, napi_value value, ts_polyglot_string\* out, size_t max, const char\* fn, const ts_polyglot_path\* path\)/);
   assert.match(HELPERS, /napi_create_typedarray\(env, napi_uint8_array, /);
 });
 
-test("an array reader checks for an array, allocates zeroed storage before reading, extends the path with the index and stops on a throwing getter", () => {
+test("a path is a chain of names and indexes rendered only when a check fails", () => {
+  assert.match(HELPERS, /typedef struct ts_polyglot_path \{ const struct ts_polyglot_path\* parent; const char\* name; size_t index; \} ts_polyglot_path;/);
+  assert.match(HELPERS, /static void ts_polyglot_render\(const ts_polyglot_path\* path, char\* out, size_t size\)/);
+  assert.match(HELPERS, /static bool ts_polyglot_fail\(napi_env env, bool range, const char\* fn, const ts_polyglot_path\* path, const char\* what\)/);
+  const struct = structHelpers({ kind: "struct", c: "struct Point", name: "Point", fields: [{ name: "x", member: "x", type: i32 }] });
+  assert.match(struct, /ts_polyglot_path child = \{ path, NULL, 0 \};/);
+  assert.match(struct, /child\.name = "x";\n\s*if \(napi_get_named_property/);
+  assert.match(struct, /ts_polyglot_read_int\(env, field, [^;]*&wide, fn, &child\)/);
+});
+
+test("an array reader checks for an array, allocates zeroed storage before reading, indexes the path without formatting it and stops on a throwing getter", () => {
   const text = arrayHelpers(list(i32));
-  assert.match(text, /static bool ts_polyglot_read_array_int_int32_t\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const char\* path\) \{/);
+  assert.match(text, /static bool ts_polyglot_read_array_int_int32_t\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const ts_polyglot_path\* path\) \{/);
   assert.match(text, /if \(!is_array\) return ts_polyglot_fail\(env, false, fn, path, "an array"\);/);
   assert.match(text, /items = \(int32_t\*\)ts_polyglot_alloc\(length, sizeof\(int32_t\)\);/);
   assert.match(text, /out->ptr = items;\n\s*out->len = length;\n\s*out->release = NULL;\n\s*for \(/);
-  assert.match(text, /snprintf\(child, sizeof child, "%s\[%u\]", path, \(unsigned\)i\);/);
+  assert.match(text, /ts_polyglot_path child = \{ path, NULL, 0 \};/);
+  assert.match(text, /child\.index = i;/);
+  assert.doesNotMatch(text, /snprintf/);
   assert.match(text, /if \(napi_get_element\(env, value, i, &element\) != napi_ok\) return false;/);
   assert.match(text, /static napi_value ts_polyglot_make_array_int_int32_t\(napi_env env, ts_polyglot_array value\) \{/);
   assert.match(text, /napi_create_array_with_length\(env, length, &result\);/);
@@ -94,10 +108,11 @@ test("a fixed length is checked before anything is allocated; bytes go through t
   assert.doesNotMatch(arrayHelpers(list(u8)), /out->len != /);
 });
 
-test("cleanup frees an array's elements then its storage, with a loop index per depth, and leaves a byte view alone", () => {
+test("cleanup frees an array's elements then its storage, with a loop index per depth; a byte copy is storage too", () => {
   assert.deepEqual(cleanup(list(str), "arg0"), ["{ size_t i0; for (i0 = 0; i0 < arg0.len; i0++) { free(((ts_polyglot_string*)arg0.ptr)[i0].ptr); } }", "free(arg0.ptr);"]);
   assert.deepEqual(cleanup(list(i32), "arg0"), ["free(arg0.ptr);"]);
-  assert.deepEqual(cleanup(list(u8), "arg0"), []);
+  assert.deepEqual(cleanup(list(u8), "arg0"), ["free(arg0.ptr);"]);
+  assert.deepEqual(cleanup(list(list(u8)), "arg0"), ["{ size_t i0; for (i0 = 0; i0 < arg0.len; i0++) { free(((ts_polyglot_array*)arg0.ptr)[i0].ptr); } }", "free(arg0.ptr);"]);
   assert.deepEqual(cleanup(list(list(str)), "arg1"), ["{ size_t i0; for (i0 = 0; i0 < arg1.len; i0++) { { size_t i1; for (i1 = 0; i1 < ((ts_polyglot_array*)arg1.ptr)[i0].len; i1++) { free(((ts_polyglot_string*)((ts_polyglot_array*)arg1.ptr)[i0].ptr)[i1].ptr); } } free(((ts_polyglot_array*)arg1.ptr)[i0].ptr); } }", "free(arg1.ptr);"]);
 });
 

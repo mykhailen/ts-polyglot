@@ -143,13 +143,13 @@ function mirrors(module: NativeModule): string[] {
       `static ${struct.spelling} ts_polyglot__from_${struct.name}(const ${mirror.c}& m) {`,
       `  ${struct.spelling} v;`,
       ...indices,
-      ...fields.flatMap((field) => (inline(field.type) ? copyIn(field.abi, `v.${field.name}`, `m.${field.name}`, "cpp") : [`v.${field.name} = ${fromMirror(field.type, field.abi, `m.${field.name}`)};`])).map((line) => `  ${line}`),
+      ...fields.flatMap((field) => (inline(field.type) ? copyIn(field.abi, field.type, `v.${field.name}`, `m.${field.name}`, "cpp") : [`v.${field.name} = ${fromMirror(field.type, field.abi, `m.${field.name}`)};`])).map((line) => `  ${line}`),
       "  return v;",
       "}",
       `static ${mirror.c} ts_polyglot__to_${struct.name}(const ${struct.spelling}& v) {`,
       `  ${mirror.c} m;`,
       ...indices,
-      ...fields.flatMap((field) => (inline(field.type) ? copyOut(field.abi, `m.${field.name}`, `v.${field.name}`, "cpp") : [`m.${field.name} = ${toMirror(field.type, field.abi, `v.${field.name}`)};`])).map((line) => `  ${line}`),
+      ...fields.flatMap((field) => (inline(field.type) ? copyOut(field.abi, field.type, `m.${field.name}`, `v.${field.name}`, "cpp") : [`m.${field.name} = ${toMirror(field.type, field.abi, `v.${field.name}`)};`])).map((line) => `  ${line}`),
       "  return m;",
       "}",
       `template <> struct ts_polyglot__abi<${struct.spelling}> { using type = ${mirror.c}; };`,
@@ -188,7 +188,8 @@ export function cppShim(fn: NativeFunction, module: NativeModule): string {
   const visible = visibleParams(fn);
   const abis = new Map(visible.map((param) => [param.name, shape(param.type, module)]));
   const params = [...visible.map((param) => `${abis.get(param.name)!.c} ${param.name}`), `ts_polyglot_string* ${slot}`].join(", ");
-  const zero = returns.kind === "void" ? "return;" : `return ${returns.kind === "cstring" ? "NULL" : `${returns.c}{}`};`;
+  // Value-initialization of whatever the type is: `unsigned long{}` would be ill-formed, `{}` never is.
+  const zero = returns.kind === "void" ? "return;" : "return {};";
   const fail = (message: string) => `{ *${slot} = ts_polyglot__own(${JSON.stringify(message)}); ${zero} }`;
   const setup: string[] = [];
   const args: string[] = [];
@@ -218,7 +219,7 @@ export function cppShim(fn: NativeFunction, module: NativeModule): string {
       args.push(`${tmp}.data()`);
     } else if (abi.kind === "array") {
       const tmp = `ts_polyglot_tmp_${param.name}`;
-      setup.push(`${cDeclarator(type, tmp)};`, ...copyIn(abi, tmp, param.name, "cpp"));
+      setup.push(`${cDeclarator(type, tmp)};`, ...copyIn(abi, type, tmp, param.name, "cpp"));
       depth = Math.max(depth, loopDepth(abi));
       args.push(tmp);
     } else {

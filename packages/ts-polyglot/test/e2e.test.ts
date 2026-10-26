@@ -262,6 +262,8 @@ test("C++ arrays: vectors, std::array tuples, nested vectors, byte vectors, vect
   assert.equal(output.nestedBad.error, "TypeError: transpose(): m[1][1] must be an integer between -2147483648 and 2147483647");
   assert.equal(output.flagsBad.error, "TypeError: count_true(): flags[1] must be a boolean");
   assert.equal(output.closeBad.error, "TypeError: close(): s.pts[1].y must be an integer between -2147483648 and 2147483647");
+  // C-style arrays of std types inside a struct: converted element by element.
+  assert.deepEqual(output.tagUp, { tags: ["a!", "b!"], rows: [[2], [4, 6]] });
 });
 
 test("Rust arrays: slices, Vecs, fixed arrays, bytes, structs with list fields, nested paths, a panic midway, a throwing getter", () => {
@@ -280,6 +282,8 @@ test("Rust arrays: slices, Vecs, fixed arrays, bytes, structs with list fields, 
   assert.deepEqual(output.grid, [[2, 4], [6]]);
   assert.deepEqual(output.chars, ["😀", "a"]);
   assert.deepEqual(output.mottoBytes, [115, 104, 105, 112]);
+  assert.deepEqual(output.chunks, [[2, 1], []]);
+  assert.deepEqual(output.pairs, [[2, 1], [4, 3]]);
   assert.equal(output.panicsMidway.error, "Error: boom");
   assert.deepEqual(output.panicsNot, [1]);
   assert.equal(output.digestLength.error, "RangeError: digest(): key must have 4 bytes");

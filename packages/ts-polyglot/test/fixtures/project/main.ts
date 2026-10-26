@@ -6,8 +6,8 @@ import { dist, rename, shift } from "./points.rs";
 import { area, grow, retag } from "./shapes.c";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
 import { area as poly_area, checksum, count_a, dot, longest, mean, norm, relabel, total_pts, trace } from "./vectors.c";
-import { close, count_true, cross, evens, reverse_bytes, split, throws_midway, transpose } from "./vectors.cpp";
-import { chars, cross as cross_rs, digest, evens as evens_rs, grid, motto_bytes, pair, panics_midway, reverse, shift_all, shout_all, sum } from "./vectors.rs";
+import { close, count_true, cross, evens, reverse_bytes, split, tag_up, throws_midway, transpose } from "./vectors.cpp";
+import { chars, chunks, cross as cross_rs, digest, evens as evens_rs, grid, motto_bytes, pair, pairs, panics_midway, reverse, shift_all, shout_all, sum } from "./vectors.rs";
 
 // The fixture has no @types/node; a Buffer is a Uint8Array, which is all the glue needs to know.
 declare const Buffer: { from(bytes: number[]): Uint8Array };
@@ -137,6 +137,7 @@ const output = {
   nestedBad: attempt(() => transpose([[1, 2], [3, "x"]] as never)),
   flagsBad: attempt(() => count_true([true, 1] as never)),
   closeBad: attempt(() => close({ pts: [{ x: 1, y: 2 }, { x: 3 }], name: "t" } as never)),
+  tagUp: tag_up({ tags: ["a", "b"], rows: [[1], [2, 3]] }),
   // Rust arrays.
   sum: sum([1, 2, 3n]),
   sumEmpty: sum([]),
@@ -152,6 +153,8 @@ const output = {
   grid: grid([[1, 2], [3]]),
   chars: chars(["a", "😀"]),
   mottoBytes: Array.from(motto_bytes()),
+  chunks: chunks([new Uint8Array([1, 2]), new Uint8Array(0)]).map((c) => Array.from(c)),
+  pairs: pairs([[1, 2], [3, 4]]),
   panicsMidway: attempt(() => panics_midway([1, 2, 3])),
   panicsNot: panics_midway([1]),
   digestLength: attempt(() => digest(new Uint8Array(3))),

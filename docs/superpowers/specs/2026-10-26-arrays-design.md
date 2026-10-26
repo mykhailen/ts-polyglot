@@ -169,12 +169,12 @@ in for 64-bit integers, `(string | null)[]` for `const char*` elements, `Point[]
   `signed char`, `int8_t` and `i8` elements are numbers. A `Uint8Array` parameter takes any
   `Uint8Array`, a `Buffer` included, since it is one (**measured**: type 1); it rejects
   `Int8Array`, `Uint8ClampedArray`, `ArrayBuffer`, `DataView` and `number[]` with a TypeError, and a
-  view on a detached buffer with its own TypeError. On the way in, the glue lends the JavaScript
-  buffer itself, no copy: the pointer Node-API gives is already at the view's offset (**measured**),
-  the call is synchronous, and nothing the glue does during it can move the buffer. On the way out,
-  the bytes are copied into a fresh `ArrayBuffer` and come back as a plain `Uint8Array`, not a
-  `Buffer` **[call]**: the type says `Uint8Array`, and `Buffer.from(u8.buffer, u8.byteOffset,
-  u8.length)` views it without a copy.
+  view on a detached buffer with its own TypeError. On the way in, the bytes are copied: the pointer
+  Node-API gives is already at the view's offset (**measured**), but a getter run while a later
+  argument is read could detach or resize the buffer before the call, so lending it is not safe
+  (the review found this; the first draft lent it). On the way out, the bytes are copied into a
+  fresh `ArrayBuffer` and come back as a plain `Uint8Array`, not a `Buffer` **[call]**: the type
+  says `Uint8Array`, and `Buffer.from(u8.buffer, u8.byteOffset, u8.length)` views it without a copy.
 - **A fixed length is a tuple** **[call]**: `[number, number, number]` for `[f32; 3]`, so the length
   is checked at compile time, and `readonly` in parameter position. At runtime a wrong length is a
   RangeError: `v must have 3 elements` (`key must have 16 bytes` for bytes). No cap on N: TypeScript
@@ -258,12 +258,10 @@ typedef struct { void* ptr; size_t len; void (*release)(void*, size_t); } ts_pol
   static: the `AbiType` says it, so the glue casts.
 - Ownership follows `ts_polyglot_string`. A buffer the glue made has `release` NULL; the glue frees it
   and what it holds after the call. A result the native side made carries a `release` the glue calls
-  once the JavaScript value exists, after releasing the elements. A JavaScript byte buffer the glue
-  lends has `release` NULL and points into JavaScript memory: readable during the call, nothing else.
+  once the JavaScript value exists, after releasing the elements. Bytes are copies too, both ways.
 - Empty: the glue's own buffers are never NULL (one element is allocated for an empty array, so a C
-  function never sees a NULL it didn't ask for), but a lent byte buffer can be NULL with `len` 0
-  (**measured**), and so can a result. Every reader of a `ts_polyglot_array`, on either side, treats
-  a NULL `ptr` as empty whatever `len` says.
+  function never sees a NULL it didn't ask for), but a result can be NULL with `len` 0. Every reader
+  of a `ts_polyglot_array`, on either side, treats a NULL `ptr` as empty whatever `len` says.
 - `release` is called whenever it is set, `len` 0 included: a Rust `Box<[T]>` of nothing still has
   to be dropped.
 
@@ -501,8 +499,9 @@ rule.
 
 ## Calls, for the owner to flip
 
-1. Bytes are `Uint8Array` only for unsigned 8-bit elements; lent in without a copy, copied out as a
-   plain `Uint8Array`; `Buffer` accepted, other typed arrays and detached views rejected.
+1. Bytes are `Uint8Array` only for unsigned 8-bit elements; copied in (the review showed lending
+   them is unsafe), copied out as a plain `Uint8Array`; `Buffer` accepted, other typed arrays and
+   detached views rejected.
 2. Fixed lengths are tuples, uncapped; a wrong length is a RangeError.
 3. Array parameters are `readonly`; results and fields are not.
 4. `char name[N]` is a bounded string; `const char s[]` with a length is a counted string.

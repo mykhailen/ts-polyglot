@@ -40,7 +40,7 @@ release notes ([docs/releasing.md](docs/releasing.md)).
   arrays as struct fields and as `const T xs[]` parameters paired with the next integer parameter
   (or the one `xs[n]` names), which leaves the TypeScript signature. They are `T[]`, `readonly` as
   parameters, and a fixed length is a tuple; unsigned bytes (`u8`, `uint8_t`, `unsigned char`) are a
-  `Uint8Array`, lent to the native side without a copy on the way in; a C `char name[N]` is a
+  `Uint8Array`, copied both ways; a C `char name[N]` is a
   `string` of at most N − 1 bytes. A bad element is named by its path (`xs[2]`, `p.pts[0].y`), a
   wrong fixed length is a `RangeError`, and a mutable array (`&mut [T]`, `std::vector<T>&`, a
   non-const C array) still hides its function.

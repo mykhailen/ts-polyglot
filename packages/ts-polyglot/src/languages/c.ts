@@ -72,14 +72,14 @@ export function cMirrors(module: NativeModule): string[] {
         `  ${struct.spelling} v;`,
         ...indices,
         "  memset(&v, 0, sizeof v);",
-        ...mirror.fields.flatMap((field) => copyIn(field.type, `v.${field.member}`, `m->${field.member}`, "c").map((line) => `  ${line}`)),
+        ...mirror.fields.flatMap((field, i) => copyIn(field.type, struct.fields[i]!.type, `v.${field.member}`, `m->${field.member}`, "c").map((line) => `  ${line}`)),
         "  return v;",
         "}",
         `static ${mirror.c} ts_polyglot__to_${struct.name}(const ${struct.spelling}* v) {`,
         `  ${mirror.c} m;`,
         ...indices,
         "  memset(&m, 0, sizeof m);",
-        ...mirror.fields.flatMap((field) => copyOut(field.type, `m.${field.member}`, `v->${field.member}`, "c").map((line) => `  ${line}`)),
+        ...mirror.fields.flatMap((field, i) => copyOut(field.type, struct.fields[i]!.type, `m.${field.member}`, `v->${field.member}`, "c").map((line) => `  ${line}`)),
         "  return m;",
         "}",
         "",
@@ -135,14 +135,14 @@ export function cShim(fn: NativeFunction, module: NativeModule): string {
       const tmp = `ts_polyglot_tmp_${param.name}`;
       locals.push(`${element}* ${tmp} = NULL;`);
       fills.push(`${tmp} = (${element}*)malloc((${param.name}.len ? ${param.name}.len : 1) * sizeof(${element}));`, `if (!${tmp}) ${fail(`${fn.name}(): can't allocate ${param.name}`)}`);
-      fills.push(`for (i0 = 0; i0 < ${param.name}.len; i0++) { ${copyIn(abi.of, `${tmp}[i0]`, `((${abi.of.c} const*)${param.name}.ptr)[i0]`, "c", 1).join(" ")} }`);
+      fills.push(`for (i0 = 0; i0 < ${param.name}.len; i0++) { ${copyIn(abi.of, (param.type as NativeType & { kind: "array" }).of, `${tmp}[i0]`, `((${abi.of.c} const*)${param.name}.ptr)[i0]`, "c", 1).join(" ")} }`);
       depth = Math.max(depth, 1 + loopDepth(abi.of));
       frees.push(`free(${tmp});`);
       args.push(tmp);
     } else if (abi.kind === "array") {
       const tmp = `ts_polyglot_tmp_${param.name}`;
       locals.push(`${cDeclarator(param.type, tmp)};`);
-      fills.push(...copyIn(abi, tmp, param.name, "c"));
+      fills.push(...copyIn(abi, param.type, tmp, param.name, "c"));
       depth = Math.max(depth, loopDepth(abi));
       args.push(tmp);
     } else if (abi.kind === "string") {

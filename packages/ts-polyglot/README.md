@@ -110,8 +110,8 @@ message.
 Sequences (`Vec<T>`, `&[T]`, `std::vector<T>`, a C array with its length parameter) are `T[]`,
 `readonly T[]` as parameters; a fixed length (`[T; N]`, `std::array<T, N>`, `T x[N]`) is a tuple, and
 a wrong length a `RangeError`. Unsigned bytes (`u8`, `uint8_t`, `unsigned char`) are a `Uint8Array`
-instead, lent to the native side without a copy on the way in and copied into a fresh one on the way
-out; a `Buffer` is accepted, other typed arrays aren't. A C `char name[N]` is a `string` of at most
+instead, copied in and copied into a fresh one on the way out; a `Buffer` is accepted, other typed
+arrays aren't. A C `char name[N]` is a `string` of at most
 N − 1 bytes. Elements are checked one by one and named by their path (`xs[2]`, `p.pts[0].y`).
 
 **The C length rule.** In C and C++, `double mean(const double xs[], size_t n)` is

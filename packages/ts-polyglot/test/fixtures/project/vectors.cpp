@@ -58,5 +58,14 @@ std::vector<int> throws_midway(const std::vector<int>& xs) {
     return r;
 }
 
+// C-style arrays of std types: the mirror converts each element.
+struct Tagged { std::string tags[2]; std::vector<int> rows[2]; };
+
+Tagged tag_up(Tagged t) {
+    for (auto& tag : t.tags) tag += "!";
+    for (auto& row : t.rows) for (int& x : row) x *= 2;
+    return t;
+}
+
 // Hidden: a mutable reference.
 void sort_in_place(std::vector<int>& xs) { (void)xs; }

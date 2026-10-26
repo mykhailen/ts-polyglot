@@ -62,19 +62,38 @@ typedef struct { char* ptr; size_t len; void (*release)(char*, size_t); } ts_pol
 typedef struct { void* ptr; size_t len; void (*release)(void*, size_t); } ts_polyglot_array;`;
 
 /** The readers and makers, the same text in every glue. A reader throws and returns false when the value isn't what `what` says. */
-export const HELPERS = `// Wrong JavaScript type: TypeError. Right type, impossible value: RangeError. The message names the function and the value's path.
-static bool ts_polyglot_fail(napi_env env, bool range, const char* fn, const char* path, const char* what) {
-  char message[512];
-  snprintf(message, sizeof message, "%s(): %s must be %s", fn, path, what);
+export const HELPERS = `// A value's path for a message, kept as a chain and rendered only when a check fails: a parameter's
+// name, then a field name (name set) or an index (name NULL) per level. Formatting it per element
+// would cost more than reading the element.
+typedef struct ts_polyglot_path { const struct ts_polyglot_path* parent; const char* name; size_t index; } ts_polyglot_path;
+
+static void ts_polyglot_render(const ts_polyglot_path* path, char* out, size_t size) {
+  size_t used;
+  if (!path) { out[0] = 0; return; }
+  ts_polyglot_render(path->parent, out, size);
+  used = strlen(out);
+  if (used >= size) return;
+  if (path->name) snprintf(out + used, size - used, path->parent ? ".%s" : "%s", path->name);
+  else snprintf(out + used, size - used, "[%llu]", (unsigned long long)path->index);
+}
+
+// Wrong JavaScript type: TypeError. Right type, impossible value: RangeError. The message names the function and the value's path.
+static bool ts_polyglot_fail(napi_env env, bool range, const char* fn, const ts_polyglot_path* path, const char* what) {
+  char where[512];
+  char message[1024];
+  ts_polyglot_render(path, where, sizeof where);
+  snprintf(message, sizeof message, "%s(): %s must be %s", fn, where, what);
   if (range) napi_throw_range_error(env, NULL, message);
   else napi_throw_type_error(env, NULL, message);
   return false;
 }
 
 // The same, for what a value must have rather than be: "must have 3 elements".
-static bool ts_polyglot_fail_must(napi_env env, bool range, const char* fn, const char* path, const char* rest) {
-  char message[512];
-  snprintf(message, sizeof message, "%s(): %s must %s", fn, path, rest);
+static bool ts_polyglot_fail_must(napi_env env, bool range, const char* fn, const ts_polyglot_path* path, const char* rest) {
+  char where[512];
+  char message[1024];
+  ts_polyglot_render(path, where, sizeof where);
+  snprintf(message, sizeof message, "%s(): %s must %s", fn, where, rest);
   if (range) napi_throw_range_error(env, NULL, message);
   else napi_throw_type_error(env, NULL, message);
   return false;
@@ -89,7 +108,7 @@ static void* ts_polyglot_alloc(size_t count, size_t size) {
 // An integer takes a number or a bigint. A number must be finite, integral and safe (anything past 2^53
 // has already lost bits); a bigint must convert without loss. Either must then fit the C type's limits,
 // which the caller passes as the type's own macros, so the platform's widths apply.
-static bool ts_polyglot_read_int(napi_env env, napi_value value, int64_t min, int64_t max, int64_t* out, const char* fn, const char* path) {
+static bool ts_polyglot_read_int(napi_env env, napi_value value, int64_t min, int64_t max, int64_t* out, const char* fn, const ts_polyglot_path* path) {
   char what[128];
   napi_valuetype type;
   napi_typeof(env, value, &type);
@@ -112,7 +131,7 @@ static bool ts_polyglot_read_int(napi_env env, napi_value value, int64_t min, in
   return ts_polyglot_fail(env, false, fn, path, what);
 }
 
-static bool ts_polyglot_read_uint(napi_env env, napi_value value, uint64_t max, uint64_t* out, const char* fn, const char* path) {
+static bool ts_polyglot_read_uint(napi_env env, napi_value value, uint64_t max, uint64_t* out, const char* fn, const ts_polyglot_path* path) {
   char what[128];
   napi_valuetype type;
   napi_typeof(env, value, &type);
@@ -135,7 +154,7 @@ static bool ts_polyglot_read_uint(napi_env env, napi_value value, uint64_t max, 
   return ts_polyglot_fail(env, false, fn, path, what);
 }
 
-static bool ts_polyglot_read_double(napi_env env, napi_value value, double* out, const char* fn, const char* path) {
+static bool ts_polyglot_read_double(napi_env env, napi_value value, double* out, const char* fn, const ts_polyglot_path* path) {
   napi_valuetype type;
   napi_typeof(env, value, &type);
   if (type != napi_number) return ts_polyglot_fail(env, false, fn, path, "a number");
@@ -143,7 +162,7 @@ static bool ts_polyglot_read_double(napi_env env, napi_value value, double* out,
   return true;
 }
 
-static bool ts_polyglot_read_bool(napi_env env, napi_value value, bool* out, const char* fn, const char* path) {
+static bool ts_polyglot_read_bool(napi_env env, napi_value value, bool* out, const char* fn, const ts_polyglot_path* path) {
   napi_valuetype type;
   napi_typeof(env, value, &type);
   if (type != napi_boolean) return ts_polyglot_fail(env, false, fn, path, "a boolean");
@@ -152,7 +171,7 @@ static bool ts_polyglot_read_bool(napi_env env, napi_value value, bool* out, con
 }
 
 // One Unicode scalar value: a single code unit that isn't a surrogate, or one surrogate pair.
-static bool ts_polyglot_read_char(napi_env env, napi_value value, uint32_t* out, const char* fn, const char* path) {
+static bool ts_polyglot_read_char(napi_env env, napi_value value, uint32_t* out, const char* fn, const ts_polyglot_path* path) {
   napi_valuetype type;
   size_t length;
   char16_t units[3];
@@ -189,7 +208,7 @@ static napi_value ts_polyglot_make_char(napi_env env, uint32_t c) {
 
 // A C string: a malloc'd NUL-terminated UTF-8 copy, or NULL for null. The C side would see an embedded
 // NUL as the end of the string, so one is a RangeError.
-static bool ts_polyglot_read_cstring(napi_env env, napi_value value, char** out, const char* fn, const char* path) {
+static bool ts_polyglot_read_cstring(napi_env env, napi_value value, char** out, const char* fn, const ts_polyglot_path* path) {
   napi_valuetype type;
   size_t length;
   char* copy;
@@ -214,7 +233,7 @@ static bool ts_polyglot_read_cstring(napi_env env, napi_value value, char** out,
 // Text with its length, for a shim or wrapper: a malloc'd copy the glue frees after the call, with a
 // NUL after it. A NUL inside is just a byte, unless max bounds the string: then it's headed for a C
 // char[max + 1], which ends at the first NUL, so one inside is refused like a length past the bound.
-static bool ts_polyglot_read_string(napi_env env, napi_value value, ts_polyglot_string* out, size_t max, const char* fn, const char* path) {
+static bool ts_polyglot_read_string(napi_env env, napi_value value, ts_polyglot_string* out, size_t max, const char* fn, const ts_polyglot_path* path) {
   napi_valuetype type;
   size_t length;
   char what[128];
@@ -233,10 +252,11 @@ static bool ts_polyglot_read_string(napi_env env, napi_value value, ts_polyglot_
   return true;
 }
 
-// A byte buffer is lent, not copied: the Uint8Array's own memory, for the length of the call. The
-// pointer Node-API gives is already at the view's offset (measured). A view on a detached buffer
-// reads as empty, so it's refused by name instead. A Buffer is a Uint8Array; other typed arrays aren't.
-static bool ts_polyglot_read_bytes(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const char* path) {
+// A byte buffer is copied, not lent: a getter run while a later argument is read could detach or
+// resize the Uint8Array's buffer before the call. The pointer Node-API gives is already at the view's
+// offset (measured). A view on a detached buffer reads as empty, so it's refused by name instead. A
+// Buffer is a Uint8Array; other typed arrays aren't.
+static bool ts_polyglot_read_bytes(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const ts_polyglot_path* path) {
   bool typed = false;
   bool detached = false;
   napi_typedarray_type type;
@@ -249,7 +269,9 @@ static bool ts_polyglot_read_bytes(napi_env env, napi_value value, ts_polyglot_a
   if (type != napi_uint8_array) return ts_polyglot_fail(env, false, fn, path, "a Uint8Array");
   napi_is_detached_arraybuffer(env, buffer, &detached);
   if (detached) return ts_polyglot_fail(env, false, fn, path, "a Uint8Array that isn't detached");
-  out->ptr = data;
+  out->ptr = ts_polyglot_alloc(length, 1);
+  if (!out->ptr) return ts_polyglot_fail(env, true, fn, path, "a Uint8Array that fits in memory");
+  if (length) memcpy(out->ptr, data, length);
   out->len = length;
   out->release = NULL;
   return true;
@@ -335,9 +357,9 @@ const bytes = (abi: AbiType) => abi.kind === "int" && abi.bits === 8 && !abi.sig
 
 /** The declarations of a struct's or an array's reader and maker, so the definitions can come in any order. */
 export function helperPrototype(abi: AbiType & { kind: "struct" | "array" }): string {
-  if (abi.kind === "struct") return `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const char* path);\nstatic napi_value ts_polyglot_make_${abi.name}(napi_env env, ${abi.c} value);`;
+  if (abi.kind === "struct") return `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const ts_polyglot_path* path);\nstatic napi_value ts_polyglot_make_${abi.name}(napi_env env, ${abi.c} value);`;
   const id = abiId(abi);
-  return `static bool ts_polyglot_read_${id}(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const char* path);\nstatic napi_value ts_polyglot_make_${id}(napi_env env, ts_polyglot_array value);`;
+  return `static bool ts_polyglot_read_${id}(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const ts_polyglot_path* path);\nstatic napi_value ts_polyglot_make_${id}(napi_env env, ts_polyglot_array value);`;
 }
 
 /**
@@ -349,7 +371,7 @@ export function helperPrototype(abi: AbiType & { kind: "struct" | "array" }): st
  */
 export function arrayHelpers(abi: AbiType & { kind: "array" }): string {
   const id = abiId(abi);
-  const reader = `static bool ts_polyglot_read_${id}(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const char* path) {`;
+  const reader = `static bool ts_polyglot_read_${id}(napi_env env, napi_value value, ts_polyglot_array* out, const char* fn, const ts_polyglot_path* path) {`;
   const maker = `static napi_value ts_polyglot_make_${id}(napi_env env, ts_polyglot_array value) {`;
   if (bytes(abi.of)) {
     return [
@@ -373,7 +395,7 @@ export function arrayHelpers(abi: AbiType & { kind: "array" }): string {
     "  uint32_t i;",
     "  napi_value element = NULL;",
     `  ${element}* items;`,
-    "  char child[512];",
+    "  ts_polyglot_path child = { path, NULL, 0 };",
     "  napi_is_array(env, value, &is_array);",
     '  if (!is_array) return ts_polyglot_fail(env, false, fn, path, "an array");',
     "  napi_get_array_length(env, value, &length);",
@@ -384,10 +406,10 @@ export function arrayHelpers(abi: AbiType & { kind: "array" }): string {
     "  out->len = length;",
     "  out->release = NULL;",
     "  for (i = 0; i < length; i++) {",
-    '    snprintf(child, sizeof child, "%s[%u]", path, (unsigned)i);',
+    "    child.index = i;",
     // A hole reads as undefined and fails the element's type check; a throwing getter propagates its own error.
     "    if (napi_get_element(env, value, i, &element) != napi_ok) return false;",
-    ...readArgument(abi.of, "element", "items[i]", "fn, child", "return false;").map((line) => `    ${line}`),
+    ...readArgument(abi.of, "element", "items[i]", "fn, &child", "return false;").map((line) => `    ${line}`),
     "  }",
     "  return true;",
     "}",
@@ -414,11 +436,11 @@ export function arrayHelpers(abi: AbiType & { kind: "array" }): string {
 export function structHelpers(abi: AbiType & { kind: "struct" }): string {
   const what = JSON.stringify(abi.fields.length ? `an object with ${abi.fields.map((field) => field.name).join(", ")}` : "an object");
   const lines = [
-    `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const char* path) {`,
+    `static bool ts_polyglot_read_${abi.name}(napi_env env, napi_value value, ${abi.c}* out, const char* fn, const ts_polyglot_path* path) {`,
     "  napi_valuetype type;",
     "  bool is_array = false;",
     "  napi_value field = NULL;",
-    "  char child[512];",
+    "  ts_polyglot_path child = { path, NULL, 0 };",
     "  napi_typeof(env, value, &type);",
     "  if (type == napi_object) napi_is_array(env, value, &is_array);",
     `  if (type != napi_object || is_array) return ts_polyglot_fail(env, false, fn, path, ${what});`,
@@ -426,8 +448,8 @@ export function structHelpers(abi: AbiType & { kind: "struct" }): string {
   for (const field of abi.fields) {
     // A missing property reads as undefined, which the field's own reader rejects with the full path. A
     // getter that throws leaves the slot unwritten and an exception pending: stop, and let it propagate.
-    lines.push(`  snprintf(child, sizeof child, "%s.${field.name}", path);`, `  if (napi_get_named_property(env, value, ${JSON.stringify(field.name)}, &field) != napi_ok) return false;`);
-    lines.push(...readArgument(field.type, "field", `out->${field.member}`, "fn, child", "return false;").map((line) => `  ${line}`));
+    lines.push(`  child.name = ${JSON.stringify(field.name)};`, `  if (napi_get_named_property(env, value, ${JSON.stringify(field.name)}, &field) != napi_ok) return false;`);
+    lines.push(...readArgument(field.type, "field", `out->${field.member}`, "fn, &child", "return false;").map((line) => `  ${line}`));
   }
   lines.push("  return true;", "}", "", `static napi_value ts_polyglot_make_${abi.name}(napi_env env, ${abi.c} value) {`, "  napi_value result;", "  napi_value field;", "  napi_create_object(env, &result);");
   for (const field of abi.fields) {
@@ -466,9 +488,9 @@ export function makeResult(abi: AbiType, value: string, into: string): string[] 
 }
 
 /**
- * C that frees what reading `value` as an argument left owned: the copies of strings and the element
- * storage of arrays, inside structs and arrays too. Safe on a value that was never read. A byte array
- * is JavaScript's own buffer, lent for the call, so nothing is freed. `depth` numbers nested loops.
+ * C that frees what reading `value` as an argument left owned: the copies of strings, bytes and the
+ * element storage of arrays, inside structs and arrays too. Safe on a value that was never read.
+ * `depth` numbers nested loops.
  */
 export function cleanup(abi: AbiType, value: string, depth = 0): string[] {
   switch (abi.kind) {
@@ -479,7 +501,6 @@ export function cleanup(abi: AbiType, value: string, depth = 0): string[] {
     case "struct":
       return abi.fields.flatMap((field) => cleanup(field.type, `${value}.${field.member}`, depth));
     case "array": {
-      if (bytes(abi.of)) return [];
       const index = `i${depth}`;
       const elements = cleanup(abi.of, `((${abi.of.c}*)${value}.ptr)[${index}]`, depth + 1);
       return [...(elements.length ? [`{ size_t ${index}; for (${index} = 0; ${index} < ${value}.len; ${index}++) { ${elements.join(" ")} } }`] : []), `free(${value}.ptr);`];

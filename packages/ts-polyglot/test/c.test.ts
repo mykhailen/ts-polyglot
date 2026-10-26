@@ -182,8 +182,8 @@ test("a struct with a bitfield isn't plain; one with a pointer field is plain bu
 const field = (source: string, i: number) => module(source).structs[0]!.fields[i]!.type;
 
 test("array sizes: literals in any base and names the file defines; expressions, foreign names and zero are unknown", () => {
-  const source = "#define N 4\n#define P (8)\nconst int M = 2;\nstruct S { int a[0x10]; int b[N]; int c[P]; int d[M]; int e[N * 2]; int f[Q]; int g[0]; };\n";
-  assert.deepEqual([0, 1, 2, 3].map((i) => (field(source, i) as { length?: number }).length), [16, 4, 8, 2]);
+  const source = "#define N 4\n#define P (8)\n#define R 5 // with a comment\n#define T /* here */ 6\nconst int M = 2;\nstruct S { int a[0x10]; int b[N]; int c[P]; int d[M]; int e[N * 2]; int f[Q]; int g[0]; int r[R]; int t[T]; };\n";
+  assert.deepEqual([0, 1, 2, 3, 7, 8].map((i) => (field(source, i) as { length?: number }).length), [16, 4, 8, 2, 5, 6]);
   assert.deepEqual([4, 5, 6].map((i) => field(source, i).kind), ["unknown", "unknown", "unknown"]);
 });
 

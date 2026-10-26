@@ -18,6 +18,10 @@ pub fn shift_all(mut p: Poly) -> Poly {
 pub fn grid(m: Vec<Vec<i32>>) -> Vec<Vec<i32>> { m.into_iter().map(|row| row.into_iter().map(|x| x * 2).collect()).collect() }
 pub fn chars(cs: Vec<char>) -> Vec<char> { cs.into_iter().rev().collect() }
 pub fn motto_bytes() -> &'static [u8] { b"ship" }
+// Nested bytes: an array of Uint8Arrays each way.
+pub fn chunks(xs: Vec<Vec<u8>>) -> Vec<Vec<u8>> { xs.into_iter().map(|c| c.into_iter().rev().collect()).collect() }
+// A sequence of fixed arrays: tuples in an array.
+pub fn pairs(v: Vec<[f32; 2]>) -> Vec<[f32; 2]> { v.into_iter().map(|[a, b]| [b, a]).collect() }
 // Panics after reading its input: the panic is the whole answer.
 pub fn panics_midway(xs: &[i32]) -> Vec<i32> { if xs.len() > 2 { panic!("boom") } xs.to_vec() }
 // Hidden: &mut, &[&str], Box, an expression size.
