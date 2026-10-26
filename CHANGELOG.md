@@ -6,7 +6,7 @@ release notes ([docs/releasing.md](docs/releasing.md)).
 
 ## ts-polyglot
 
-### 0.3.0 (unreleased)
+### 0.3.0 (2026-10-26)
 
 - Native files are parsed with tree-sitter (`web-tree-sitter`, with the C, C++ and Rust grammars
   vendored under `grammars/`, about 5 MB unpacked), one walker per language. Found now: functions
@@ -71,7 +71,7 @@ First release.
 
 ## create-ts-polyglot
 
-### 0.3.0 (unreleased)
+### 0.3.0 (2026-10-26)
 
 - The template keeps its sources in `src/`: `main.ts` and the native files it imports. The `start`
   script and the launch configurations point there.
