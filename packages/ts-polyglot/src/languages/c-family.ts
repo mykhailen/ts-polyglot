@@ -104,7 +104,7 @@ function collectConstant(node: Node, path: readonly string[], constants: Constan
   if (node.type === "preproc_def") {
     const name = node.childForFieldName("name");
     const value = node.childForFieldName("value");
-    const literal = value && parseIntegerLiteral(value.text.trim().replace(/^\((.*)\)$/, "$1"), "c");
+    const literal = value ? parseIntegerLiteral(value.text.trim().replace(/^\((.*)\)$/, "$1"), "c") : undefined;
     if (name && literal !== undefined) constants.add(name.text, path, literal);
   } else if (node.type === "declaration" && node.namedChildren.some((child) => child.type === "type_qualifier" && /^(const|constexpr)$/.test(child.text))) {
     for (const declarator of node.childrenForFieldName("declarator")) {
