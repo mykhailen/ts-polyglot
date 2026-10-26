@@ -29,8 +29,8 @@ setup), none of which is written down anywhere else.
 | Path | What |
 | --- | --- |
 | `packages/ts-polyglot/src/signatures.ts` | the model: `NativeType` (a discriminated union, the spelling kept on every node for the bridges), `NativeStruct`, `NativeFunction`, `NativeModule`, and `supported`, the one predicate that says what the glue marshals |
-| `packages/ts-polyglot/src/languages/` | one module per language behind `LanguageModule` (`id`, `extensions`, `grammar`, `parse(root, source)`, `glue`, `bridge(input)`): `c.ts` and `cpp.ts` share the walker in `c-family.ts` and the type table in `c-types.ts`, and each has its bridge (C calls the user's function directly; C++ through a static shim per function that catches exceptions and converts `std::string`, mirroring structs that hold one); `rust/` has its walker, `types.ts` and the wrapper-crate bridge in `bridge.ts` (`catch_unwind`, `#[repr(C)]` mirrors); `index.ts` is the registry (`languageOf`, `loadLanguage`, `parseModule`, `findFunctions`) and where a language is registered. `language.ts` defines the interface and the C-ABI vocabulary (`Bridge`, `Callee`, `AbiType`) |
-| `packages/ts-polyglot/src/marshal.ts` | the shared half that knows types but no language: `jsType`, the ABI header (`ts_polyglot_string`), the C helpers that read a JavaScript value strictly and make one back, and the struct readers and makers |
+| `packages/ts-polyglot/src/languages/` | one module per language behind `LanguageModule` (`id`, `extensions`, `grammar`, `parse(root, source)`, `glue`, `bridge(input)`): `c.ts` and `cpp.ts` share the walker in `c-family.ts`, the type table in `c-types.ts` and, in `c-family-bridge.ts`, the loops that move C-style arrays in and out of the ABI array; each has its bridge (C calls the user's function directly, or through a static shim when an array or a struct holding one is involved, since the shim passes the length and converts; C++ through a static shim per function that catches exceptions and converts `std::string`, `std::vector` and `std::array` through a template family); both mirror structs that hold text or arrays; `rust/` has its walker, `types.ts` and the wrapper-crate bridge in `bridge.ts` (`catch_unwind`, `#[repr(C)]` mirrors, generic list helpers); `index.ts` is the registry (`languageOf`, `loadLanguage`, `parseModule`, `findFunctions`) and where a language is registered. `language.ts` defines the interface and the C-ABI vocabulary (`Bridge`, `Callee`, `AbiType`) |
+| `packages/ts-polyglot/src/marshal.ts` | the shared half that knows types but no language: `jsType`, the ABI header (`ts_polyglot_string`, `ts_polyglot_array`), the C helpers that read a JavaScript value strictly and make one back (bytes through typed arrays), and the struct and array readers and makers, one pair per type, named by `abiId` |
 | `packages/ts-polyglot/src/glue.ts` | the Node-API translation unit from a module and its bridge (one wrapper per function: read, call, check the error slot, make, clean up) and the `.mjs` that loads the addon |
 | `packages/ts-polyglot/src/parser.ts` | web-tree-sitter: loads a grammar from `grammars/` once per process; parsing is synchronous |
 | `packages/ts-polyglot/grammars/` | the vendored tree-sitter `.wasm` grammars, `manifest.json` (repository, tag, SHA-256) and each grammar's LICENSE; `npm run grammars -- check` verifies them, `update <id> [tag]` re-pins one from its GitHub release |
@@ -152,11 +152,14 @@ them unbound.
 2. **Compile errors in `tsc` and the editor.** Run a syntax-only compile in `transform` and return
    the errors as mapper diagnostics. Accept that they block type checking, the same as syntax errors.
 3. **More types.** Strings, plain structs, every C and Rust integer type and `bigint` for 64-bit
-   values landed in 0.3.0 (docs/superpowers/specs/2026-10-25-types-and-marshaling-design.md). Still
-   to do, roughly in order of expected demand: arrays, vectors, slices and `Uint8Array` buffers;
-   `Option<T>` and `std::optional<T>`; enums and unions; out-parameters through `&mut T` and `T*`;
-   following `use`, `using` and `#include` for struct definitions; wide strings (`wchar_t`,
-   `char16_t`, `std::wstring`); 128-bit integers; classes with methods and `impl` blocks.
+   values landed in 0.3.0 (docs/superpowers/specs/2026-10-25-types-and-marshaling-design.md), and so
+   did arrays: `Vec<T>`, slices, `[T; N]`, `std::vector`, `std::array`, C arrays with a length
+   parameter, bytes as `Uint8Array` (docs/superpowers/specs/2026-10-26-arrays-design.md). Still to
+   do, roughly in order of expected demand: typed arrays as `number[]` inputs (a `Float64Array` is
+   60× cheaper to read than a `number[]`); `Option<T>` and `std::optional<T>`; enums and unions;
+   out-parameters through `&mut T`, `T*` and mutable arrays; `std::span`; following `use`, `using`
+   and `#include` for struct definitions; wide strings (`wchar_t`, `char16_t`, `std::wstring`);
+   128-bit integers; classes with methods and `impl` blocks.
 4. **More toolchains:** MinGW gcc and clang-cl on Windows (they need a per-OS `compiler` setting,
    because one committed value would mean different things on different OSes), and Windows on arm64.
 5. **Releasing.** Both packages have been on npm since 2026-10-23 (0.1.0, published by hand).

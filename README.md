@@ -74,11 +74,12 @@ what those files export instead of trying to parse them as TypeScript.
 
 ## Status
 
-Early. Functions that take and return numbers, booleans, strings and plain structs work, wherever
-tree-sitter finds them: at the top level, inside `extern "C" { }` blocks and namespaces, or inside
-Rust `pub mod`s. 64-bit integers are `bigint`s, conversions are strict (`TypeError` for the wrong
-type, `RangeError` for a value that doesn't fit), and a C++ exception or Rust panic becomes an
-`Error`. Pointers, arrays and enums don't cross yet. Tested on Windows (MSVC) and Linux (gcc and
+Early. Functions that take and return numbers, booleans, strings, plain structs and arrays of those
+(`Vec<T>`, slices, `std::vector`, C arrays with a length parameter, bytes as `Uint8Array`) work,
+wherever tree-sitter finds them: at the top level, inside `extern "C" { }` blocks and namespaces, or
+inside Rust `pub mod`s. 64-bit integers are `bigint`s, conversions are strict (`TypeError` for the
+wrong type, `RangeError` for a value that doesn't fit), and a C++ exception or Rust panic becomes an
+`Error`. Pointers, out-parameters and enums don't cross yet. Tested on Windows (MSVC) and Linux (gcc and
 clang); the macOS recipe is written but not yet verified. The
 [package README](packages/ts-polyglot/README.md) has the exact type tables and limits.
 

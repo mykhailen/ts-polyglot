@@ -120,6 +120,8 @@ async function main() {
   const fibCall = position(main, ", fib(50));", 2);
   console.log("\nhover add(...)      :", hoverText(await request("textDocument/hover", { textDocument: { uri: uri("main.ts") }, position: addCall })));
   console.log("hover fib(...)      :", hoverText(await request("textDocument/hover", { textDocument: { uri: uri("main.ts") }, position: fibCall })));
+  console.log("hover mean(...)     :", hoverText(await request("textDocument/hover", { textDocument: { uri: uri("main.ts") }, position: position(main, ", mean([1, 2, 3, 4]));", 2) })));
+  console.log("hover cross(...)    :", hoverText(await request("textDocument/hover", { textDocument: { uri: uri("main.ts") }, position: position(main, ", cross([1, 0, 0]", 2) })));
   console.log("definition add      :", list(await request("textDocument/definition", { textDocument: { uri: uri("main.ts") }, position: addCall })));
   console.log("definition fib      :", list(await request("textDocument/definition", { textDocument: { uri: uri("main.ts") }, position: fibCall })));
   console.log("definition hypotenuse:", list(await request("textDocument/definition", { textDocument: { uri: uri("main.ts") }, position: position(main, ", hypotenuse(3, 4));", 2) })));

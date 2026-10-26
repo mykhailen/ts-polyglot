@@ -19,8 +19,6 @@ export const cpp: LanguageModule = { id: "cpp", extensions: [".cpp", ".cc", ".cx
 const TEMPLATES = `template <class T> struct ts_polyglot__abi { using type = T; };
 template <> struct ts_polyglot__abi<std::string> { using type = ts_polyglot_string; };
 template <> struct ts_polyglot__abi<std::string_view> { using type = ts_polyglot_string; };
-template <class T> struct ts_polyglot__abi<std::vector<T>> { using type = ts_polyglot_array; };
-template <class T, size_t N> struct ts_polyglot__abi<std::array<T, N>> { using type = ts_polyglot_array; };
 template <class T> struct ts_polyglot__conv {
   static T from(const T& v) { return v; }
   static T to(const T& v) { return v; }
@@ -32,7 +30,12 @@ template <> struct ts_polyglot__conv<std::string> {
 template <> struct ts_polyglot__conv<std::string_view> {
   static std::string_view from(const ts_polyglot_string& s) { return std::string_view(s.ptr ? s.ptr : "", s.len); }
   static ts_polyglot_string to(std::string_view s) { return ts_polyglot__own(s.data(), s.size()); }
-};
+};`;
+
+// The container half, with its headers, only for a file that has an array somewhere: <vector> and
+// <array> cost the compiler time every other file would pay for nothing.
+const CONTAINER_TEMPLATES = `template <class T> struct ts_polyglot__abi<std::vector<T>> { using type = ts_polyglot_array; };
+template <class T, size_t N> struct ts_polyglot__abi<std::array<T, N>> { using type = ts_polyglot_array; };
 template <class T> struct ts_polyglot__conv<std::vector<T>> {
   using E = typename ts_polyglot__abi<T>::type;
   static std::vector<T> from(const ts_polyglot_array& a) {
@@ -64,17 +67,24 @@ template <class T, size_t N> struct ts_polyglot__conv<std::array<T, N>> {
   }
 };`;
 
+/** Whether any function or struct of the module has an array in it, at any depth. */
+function usesArrays(module: NativeModule): boolean {
+  const has = (type: NativeType): boolean => type.kind === "array" || (type.kind === "reference" && has(type.to));
+  return module.functions.some((fn) => has(fn.returns) || fn.params.some((param) => has(param.type))) || module.structs.some((struct) => struct.fields.some((field) => has(field.type)));
+}
+
 export function cppBridge(input: BridgeInput): Bridge {
   const { module } = input;
+  const arrays = usesArrays(module);
   const prelude = [
     `#include "${input.file.replaceAll("\\", "/")}"`,
-    "#include <array>",
+    ...(arrays ? ["#include <array>"] : []),
     "#include <cstdlib>",
     "#include <cstring>",
     "#include <exception>",
     "#include <string>",
     "#include <string_view>",
-    "#include <vector>",
+    ...(arrays ? ["#include <vector>"] : []),
     "",
     "// Owned strings and arrays for results and the slot: malloc'd copies the glue releases.",
     "static void ts_polyglot__release(char* ptr, size_t) { free(ptr); }",
@@ -95,6 +105,7 @@ export function cppBridge(input: BridgeInput): Bridge {
     "static size_t ts_polyglot__bounded(const char* s, size_t n) { size_t i = 0; while (i < n && s[i]) i++; return i; }",
     "",
     TEMPLATES,
+    ...(arrays ? [CONTAINER_TEMPLATES] : []),
     "",
     ...mirrors(module),
     ...module.functions.map((fn) => cppShim(fn, module)),

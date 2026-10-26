@@ -35,6 +35,15 @@ release notes ([docs/releasing.md](docs/releasing.md)).
   limits in the message. Before, they were truncated or wrapped silently.
 - A C++ exception and a Rust panic become a JavaScript `Error` carrying the message, instead of
   ending the process.
+- Arrays cross, by value and nested to any depth: Rust `Vec<T>`, `&[T]`, `&Vec<T>`, `[T; N]` and
+  `&'static [T]` results; C++ `std::vector<T>` and `std::array<T, N>`, by value or by `const&`; C
+  arrays as struct fields and as `const T xs[]` parameters paired with the next integer parameter
+  (or the one `xs[n]` names), which leaves the TypeScript signature. They are `T[]`, `readonly` as
+  parameters, and a fixed length is a tuple; unsigned bytes (`u8`, `uint8_t`, `unsigned char`) are a
+  `Uint8Array`, lent to the native side without a copy on the way in; a C `char name[N]` is a
+  `string` of at most N − 1 bytes. A bad element is named by its path (`xs[2]`, `p.pts[0].y`), a
+  wrong fixed length is a `RangeError`, and a mutable array (`&mut [T]`, `std::vector<T>&`, a
+  non-const C array) still hides its function.
 
 ### 0.2.0 (2026-10-23)
 
@@ -67,7 +76,7 @@ First release.
 - The template keeps its sources in `src/`: `main.ts` and the native files it imports. The `start`
   script and the launch configurations point there.
 - The template asks for ts-polyglot 0.3.0, and its README says what crosses now: numbers, booleans,
-  strings and plain structs.
+  strings, plain structs and arrays.
 
 ### 0.2.0 (2026-10-23)
 

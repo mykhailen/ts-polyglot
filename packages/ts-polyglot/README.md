@@ -90,13 +90,14 @@ Both halves read signatures with the same parser: tree-sitter, through one modul
 
 | Language | Functions | Types |
 | --- | --- | --- |
-| C, C++ | definitions that aren't `static`, at the top level, inside `extern "C" { }` blocks or inside named namespaces; attributes, `constexpr`, `noexcept`, trailing return types, default arguments (still required in TypeScript), `__declspec(dllexport)` and `__cdecl` are fine | every integer type (`char` to `unsigned long long`, the `(u)intN_t`s, `size_t`), `float`, `double`, `bool`, `void`; `const char*` (typed `string \| null`), `std::string`, `const std::string&`, `std::string_view`; plain structs (public data members only, defined in the same file), by value or by `const&` |
-| Rust | `pub fn`, `pub extern "C" fn` and `pub const fn`, at the top level or inside `pub mod`s | `i8`–`i64`, `isize`, `u8`–`u64`, `usize`, `f32`, `f64`, `bool`, `char`, `()`; `&str`, `String`, `&String`, `&'static str`; plain `pub struct`s with `pub` fields, by value or by `&` |
+| C, C++ | definitions that aren't `static`, at the top level, inside `extern "C" { }` blocks or inside named namespaces; attributes, `constexpr`, `noexcept`, trailing return types, default arguments (still required in TypeScript), `__declspec(dllexport)` and `__cdecl` are fine | every integer type (`char` to `unsigned long long`, the `(u)intN_t`s, `size_t`), `float`, `double`, `bool`, `void`; `const char*` (typed `string \| null`), `std::string`, `const std::string&`, `std::string_view`; plain structs (public data members only, defined in the same file), by value or by `const&`; `std::vector<T>` and `std::array<T, N>`, by value or by `const&`; C arrays as struct fields (`T x[N]`, `char name[N]` as a `string`) and as `const T xs[]` parameters paired with a length parameter |
+| Rust | `pub fn`, `pub extern "C" fn` and `pub const fn`, at the top level or inside `pub mod`s | `i8`–`i64`, `isize`, `u8`–`u64`, `usize`, `f32`, `f64`, `bool`, `char`, `()`; `&str`, `String`, `&String`, `&'static str`; plain `pub struct`s with `pub` fields, by value or by `&`; `Vec<T>`, `&[T]`, `&Vec<T>`, `[T; N]`, `&[T; N]` and `&'static [T]` results |
 
 Everything else is skipped, so importing it is a "has no exported member" error in TypeScript. That
-includes other pointers, mutable references, arrays, templates and generics, overloads past the
-first, `unsafe` and `async` functions, class methods, and a struct with any of those in it. A
-half-typed file keeps its intact functions.
+includes other pointers, mutable references and arrays (`&mut [T]`, `std::vector<T>&`, a non-const C
+array), templates other than `std::vector` and `std::array`, generics, overloads past the first,
+`unsafe` and `async` functions, class methods, and a struct with any of those in it. A half-typed
+file keeps its intact functions.
 
 **How values cross.** Integers up to 32 bits and floats are `number`s. 64-bit integers (`long`,
 `int64_t`, `size_t`, `i64`, `usize`, …) are `bigint` results and `number | bigint` parameters. A wrong
@@ -105,6 +106,19 @@ JavaScript type is a `TypeError`; a value that doesn't fit the native type (`1.5
 message. Strings are UTF-8 both ways. A struct is an object with the struct's fields, every one
 required; extra properties are ignored. A C++ exception or a Rust panic becomes an `Error` with its
 message.
+
+Sequences (`Vec<T>`, `&[T]`, `std::vector<T>`, a C array with its length parameter) are `T[]`,
+`readonly T[]` as parameters; a fixed length (`[T; N]`, `std::array<T, N>`, `T x[N]`) is a tuple, and
+a wrong length a `RangeError`. Unsigned bytes (`u8`, `uint8_t`, `unsigned char`) are a `Uint8Array`
+instead, lent to the native side without a copy on the way in and copied into a fresh one on the way
+out; a `Buffer` is accepted, other typed arrays aren't. A C `char name[N]` is a `string` of at most
+N − 1 bytes. Elements are checked one by one and named by their path (`xs[2]`, `p.pts[0].y`).
+
+**The C length rule.** In C and C++, `double mean(const double xs[], size_t n)` is
+`mean(xs: readonly number[]): number`: an array spelled `const T xs[]` takes the next integer
+parameter as its length, which the glue passes, and arrays in a row share it (`dot(a[], b[], n)`) and
+must agree. The C99 spelling `const double xs[n]` names the length parameter explicitly. A plain
+pointer, `const double* xs`, stays a pointer and hides the function, since nothing says it's an array.
 
 ## Limits
 
@@ -118,6 +132,11 @@ message.
   function that uses a struct from a header is skipped.
 - A `const char*` a function returns is copied and never freed, so the function has to keep it
   alive; NULL comes back as `null`. A non-const `char*` isn't supported yet.
+- Nothing is written back: `&mut [T]`, `std::vector<T>&` and non-const C array parameters hide
+  their function. Arrays cross by value in both directions.
+- `std::vector` and `std::array` must be spelled qualified (`using std::vector` isn't followed), and
+  an array size must be an integer literal or a name the same file defines as one (`#define`,
+  `const`, `constexpr`, a Rust `const`); any other size hides the function.
 - `long` is 32 bits wide on Windows and 64 elsewhere. Its TypeScript type is `bigint` everywhere;
   the glue checks the real width, so a value past 2^31 is a `RangeError` on Windows.
 - The runtime hook compiles and loads native code from any imported `.c`, `.cpp` or `.rs` file.

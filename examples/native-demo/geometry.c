@@ -20,3 +20,11 @@ struct Point { double x; double y; };
 double distance(struct Point a, struct Point b) {
     return hypotenuse(a.x - b.x, a.y - b.y);
 }
+
+// A const array parameter and the integer parameter after it are one `readonly number[]` in
+// TypeScript: `mean([1, 2, 3, 4])`. The glue passes the length.
+double mean(const double xs[], size_t n) {
+    double sum = 0;
+    for (size_t i = 0; i < n; i++) sum += xs[i];
+    return n ? sum / n : 0;
+}
