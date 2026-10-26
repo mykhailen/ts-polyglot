@@ -1,8 +1,9 @@
 #include <stddef.h>
 #include <string.h>
 
-// Named like libc's random(): the addon has to call this one, not libc's.
-int random(int x) {
+// The addon calls this by its own name. (It can't be named like a libc function the glue's headers
+// declare, such as random(): glibc's <stdlib.h> comes first and the signatures conflict.)
+int shuffle(int x) {
     return x * 2;
 }
 

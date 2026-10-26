@@ -134,6 +134,9 @@ pointer, `const double* xs`, stays a pointer and hides the function, since nothi
   alive; NULL comes back as `null`. A non-const `char*` isn't supported yet.
 - Nothing is written back: `&mut [T]`, `std::vector<T>&` and non-const C array parameters hide
   their function. Arrays cross by value in both directions.
+- The glue includes your C or C++ file after the C headers it needs (`stdlib.h`, `string.h`,
+  `stdio.h`, `math.h`, `limits.h`, `stdint.h`), so a function of yours with the name and a different
+  signature of something they declare (`random` on Linux, say) fails to compile.
 - `std::vector` and `std::array` must be spelled qualified (`using std::vector` isn't followed), and
   an array size must be an integer literal or a name the same file defines as one (`#define`,
   `const`, `constexpr`, a Rust `const`); any other size hides the function.

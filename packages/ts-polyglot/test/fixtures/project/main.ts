@@ -1,6 +1,6 @@
 import { add, first_word, multiply, repeat, same, scale, shout, throws } from "./add.cpp";
 import { louder, mid } from "./labels.cpp";
-import { byte_count, describe, random } from "./names.c";
+import { byte_count, describe, shuffle } from "./names.c";
 import { byte_len, clamp, echo_ref, echo_usize, fib, max_level, motto, next_char, panics, shout as shout_rs } from "./numbers.rs";
 import { dist, rename, shift } from "./points.rs";
 import { area, grow, retag } from "./shapes.c";
@@ -26,7 +26,7 @@ const output = {
   multiply: multiply(6, 7),
   fib: fib(50),
   echo: echo_long(-5),
-  random: random(5),
+  shuffle: shuffle(5),
   scale: scale(3, 4),
   clamp: clamp(15, 0, 10),
   wide: attempt(() => echo_long(2n ** 40n)),
