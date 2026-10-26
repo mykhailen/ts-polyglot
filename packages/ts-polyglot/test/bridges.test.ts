@@ -37,7 +37,7 @@ test("the Rust wrapper keeps the user's spellings, catches panics and reports th
   const module = parseModule('pub fn panics(x: i32) -> i32 { panic!("boom") }\npub mod stats { pub fn clamp(x: isize, lo: isize, hi: isize) -> isize { x } }\npub fn next(c: char) -> char { c }\n', "rust");
   const wrapper = rustWrapperSource("D:\\p\\numbers.rs", module);
   assert.match(wrapper, /^#\[path = "D:\/p\/numbers\.rs"\]\nmod user;/m);
-  assert.match(wrapper, /#\[repr\(C\)\]\npub struct ts_polyglot_string \{ ptr: \*mut u8, len: usize, release: Option<unsafe extern "C" fn\(\*mut u8, usize\)> \}/);
+  assert.match(wrapper, /#\[repr\(C\)\]\n#\[derive\(Clone, Copy\)\]\npub struct ts_polyglot_string \{ ptr: \*mut u8, len: usize, release: Option<unsafe extern "C" fn\(\*mut u8, usize\)> \}/);
   assert.match(wrapper, /#\[no_mangle\]\npub extern "C" fn ts_polyglot__panics\(x: i32, error: \*mut ts_polyglot_string\) -> i32 \{/);
   assert.match(wrapper, /catch_unwind\(std::panic::AssertUnwindSafe\(\|\| user::panics\(x\)\)\)/);
   assert.match(wrapper, /ts_polyglot_panic_message\(&p, "panics"\)/);
@@ -91,7 +91,7 @@ test("C++ uses the user's struct unless it holds a std::string, then a mirror; R
   assert.match(bridge.prelude, /typedef struct \{ ts_polyglot_string text; int size; \} ts_polyglot_Label;/);
   const rs = parseModule("pub struct Point { pub x: i32, pub long: i64 }\npub fn shift(p: Point) -> Point { p }\n", "rust");
   const wrapper = rustWrapperSource("D:\\p\\p.rs", rs);
-  assert.match(wrapper, /#\[repr\(C\)\]\npub struct ts_polyglot_Point \{ pub x: i32, pub m_long: i64 \}/);
+  assert.match(wrapper, /#\[repr\(C\)\]\n#\[derive\(Clone, Copy\)\]\npub struct ts_polyglot_Point \{ pub x: i32, pub m_long: i64 \}/);
   assert.match(wrapper, /impl From<ts_polyglot_Point> for user::Point/);
   assert.match(rustPrelude(rs), /typedef struct \{ int32_t x; int64_t m_long; \} ts_polyglot_Point;/);
   const abi = rustAbi(rs.functions[0]!.params[0]!.type, rs);
@@ -183,4 +183,31 @@ test("a C-style array parameter in C++ is cast when plain and converted through 
   assert.match(cppShim(module.functions[0]!, module), /mean\(\(double const\*\)xs\.ptr, \(size_t\)xs\.len\)/);
   assert.doesNotMatch(cppShim(module.functions[0]!, module), /SIZE_MAX/);
   assert.match(cppShim(module.functions[1]!, module), /auto ts_polyglot_tmp_items = ts_polyglot__conv<std::vector<Named>>::from\(items\);[\s\S]*ids\(ts_polyglot_tmp_items\.data\(\), \(size_t\)items\.len\)/);
+});
+
+test("the Rust wrapper borrows slices of plain elements, copies vectors, converts element strings and structs, and owns or borrows list results", () => {
+  const module = parseModule("pub struct P { pub x: i32 }\npub fn sum(xs: &[i64]) -> i64 { 0 }\npub fn evens(xs: Vec<i32>) -> Vec<i32> { xs }\npub fn shout_all(names: &[String]) -> Vec<String> { Vec::new() }\npub fn cross(a: [f32; 3], b: &[f32; 3]) -> [f32; 3] { a }\npub fn motto_bytes() -> &'static [u8] { b\"x\" }\npub fn ps(ps: Vec<P>) -> Vec<Vec<P>> { Vec::new() }\n", "rust");
+  const wrapper = rustWrapperSource("D:\\p\\v.rs", module);
+  assert.match(wrapper, /#\[repr\(C\)\]\n#\[derive\(Clone, Copy\)\]\npub struct ts_polyglot_array \{ ptr: \*mut std::ffi::c_void, len: usize, release: Option<unsafe extern "C" fn\(\*mut std::ffi::c_void, usize\)> \}/);
+  assert.match(wrapper, /pub extern "C" fn ts_polyglot__sum\(xs: ts_polyglot_array, error: \*mut ts_polyglot_string\) -> i64 \{\n    match std::panic::catch_unwind\(std::panic::AssertUnwindSafe\(\|\| user::sum\(unsafe \{ ts_polyglot_slice::<i64>\(&xs\) \}\)\)\) \{/);
+  assert.match(wrapper, /user::evens\(unsafe \{ ts_polyglot_slice::<i32>\(&xs\) \}\.to_vec\(\)\)\)\) \{\n        Ok\(r\) => ts_polyglot_own_list\(r\),/);
+  assert.match(wrapper, /user::shout_all\(&unsafe \{ ts_polyglot_slice::<ts_polyglot_string>\(&names\) \}\.iter\(\)\.map\(\|e\| String::from_utf8_lossy\(unsafe \{ ts_polyglot_bytes\(e\) \}\)\.into_owned\(\)\)\.collect::<Vec<_>>\(\)\[\.\.\]\)/);
+  assert.match(wrapper, /Ok\(r\) => ts_polyglot_own_list\(r\.into_iter\(\)\.map\(\|e\| ts_polyglot_own\(&e\)\)\.collect::<Vec<_>>\(\)\),/);
+  assert.match(wrapper, /user::cross\(<\[f32; 3\]>::try_from\(unsafe \{ ts_polyglot_slice::<f32>\(&a\) \}\)\.unwrap\(\), <&\[f32; 3\]>::try_from\(unsafe \{ ts_polyglot_slice::<f32>\(&b\) \}\)\.unwrap\(\)\)/);
+  assert.match(wrapper, /Ok\(r\) => ts_polyglot_own_list\(r\.to_vec\(\)\),/);
+  assert.match(wrapper, /Ok\(r\) => ts_polyglot_borrow_list\(r\),/);
+  assert.match(wrapper, /user::ps\(unsafe \{ ts_polyglot_slice::<ts_polyglot_P>\(&ps\) \}\.iter\(\)\.map\(\|e\| user::P::from\(\*e\)\)\.collect::<Vec<_>>\(\)\)/);
+  assert.match(wrapper, /ts_polyglot_own_list\(r\.into_iter\(\)\.map\(\|e\| ts_polyglot_own_list\(e\.into_iter\(\)\.map\(\|e\| ts_polyglot_P::from\(&e\)\)\.collect::<Vec<_>>\(\)\)\)\.collect::<Vec<_>>\(\)\)/);
+  assert.match(rustPrelude(module), /ts_polyglot_array ts_polyglot__evens\(ts_polyglot_array arg0, ts_polyglot_string\* error\);/);
+});
+
+test("a Rust mirror holds lists for Vec and array fields and converts them both ways", () => {
+  const module = parseModule("pub struct Point { pub x: i32, pub y: i64 }\npub struct Poly { pub pts: Vec<Point>, pub name: String, pub key: [u8; 4] }\npub fn f(p: Poly) -> Poly { p }\n", "rust");
+  const wrapper = rustWrapperSource("D:\\p\\v.rs", module);
+  assert.match(wrapper, /#\[repr\(C\)\]\n#\[derive\(Clone, Copy\)\]\npub struct ts_polyglot_Poly \{ pub pts: ts_polyglot_array, pub name: ts_polyglot_string, pub key: ts_polyglot_array \}/);
+  assert.match(wrapper, /pts: unsafe \{ ts_polyglot_slice::<ts_polyglot_Point>\(&m\.pts\) \}\.iter\(\)\.map\(\|e\| user::Point::from\(\*e\)\)\.collect::<Vec<_>>\(\)/);
+  assert.match(wrapper, /key: <\[u8; 4\]>::try_from\(unsafe \{ ts_polyglot_slice::<u8>\(&m\.key\) \}\)\.unwrap\(\)/);
+  assert.match(wrapper, /pts: ts_polyglot_own_list\(v\.pts\.iter\(\)\.map\(\|e\| ts_polyglot_Point::from\(e\)\)\.collect::<Vec<_>>\(\)\)/);
+  assert.match(wrapper, /key: ts_polyglot_own_list\(v\.key\.to_vec\(\)\)/);
+  assert.match(rustPrelude(module), /typedef struct \{ ts_polyglot_array pts; ts_polyglot_string name; ts_polyglot_array key; \} ts_polyglot_Poly;/);
 });

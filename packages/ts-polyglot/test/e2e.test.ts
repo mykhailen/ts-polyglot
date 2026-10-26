@@ -261,3 +261,29 @@ test("C++ arrays: vectors, std::array tuples, nested vectors, byte vectors, vect
   assert.equal(output.flagsBad.error, "TypeError: count_true(): flags[1] must be a boolean");
   assert.equal(output.closeBad.error, "TypeError: close(): s.pts[1].y must be an integer between -2147483648 and 2147483647");
 });
+
+test("Rust arrays: slices, Vecs, fixed arrays, bytes, structs with list fields, nested paths, a panic midway, a throwing getter", () => {
+  const { output } = run("project");
+  assert.equal(output.sum, "6n");
+  assert.equal(output.sumEmpty, "0n");
+  assert.deepEqual(output.evensRs, [2, 4]);
+  assert.deepEqual(output.shoutAll, ["HÉLLO", "X"]);
+  assert.deepEqual(output.crossRs, [0, 0, 1]);
+  assert.deepEqual(output.reverse, [3, 2, 1]);
+  assert.equal(output.reverseEmpty, 0);
+  assert.equal(output.reverseBig, 1_000_000);
+  assert.equal(output.digest, 1);
+  assert.deepEqual(output.pair, [2, 1]);
+  assert.deepEqual(output.shiftAll, { pts: [{ x: 2, y: "3n" }, { x: 4, y: "5n" }], name: "p!", key: { "0": 2, "1": 2, "2": 3, "3": 4 } });
+  assert.deepEqual(output.grid, [[2, 4], [6]]);
+  assert.deepEqual(output.chars, ["😀", "a"]);
+  assert.deepEqual(output.mottoBytes, [115, 104, 105, 112]);
+  assert.equal(output.panicsMidway.error, "Error: boom");
+  assert.deepEqual(output.panicsNot, [1]);
+  assert.equal(output.digestLength.error, "RangeError: digest(): key must have 4 bytes");
+  assert.equal(output.keyLengthRs.error, "RangeError: shift_all(): p.key must have 4 bytes");
+  assert.equal(output.gridPath.error, "TypeError: grid(): m[1][1] must be an integer between -2147483648 and 2147483647");
+  assert.equal(output.ptsPath.error, "TypeError: shift_all(): p.pts[1].y must be an integer between -9223372036854775808 and 9223372036854775807");
+  assert.equal(output.getterInList.error, "Error: getter");
+  assert.equal(output.detachedRs.error, "TypeError: reverse(): data must be a Uint8Array that isn't detached");
+});

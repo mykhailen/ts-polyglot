@@ -64,5 +64,6 @@ export function rustAbi(type: NativeType, module: NativeModule): AbiType {
   if (type.kind === "float" && entry) return { kind: "float", c: entry.c, bits: type.bits };
   if ((type.kind === "bool" || type.kind === "void" || type.kind === "char") && entry) return { kind: type.kind, c: entry.c };
   if (type.kind === "string") return { kind: "string", c: "ts_polyglot_string" };
+  if (type.kind === "array") return { kind: "array", c: "ts_polyglot_array", of: rustAbi(type.of, module), ...(type.length === undefined ? {} : { length: type.length }) };
   throw new Error(`ts-polyglot: ${type.spelling} isn't marshaled yet`);
 }
