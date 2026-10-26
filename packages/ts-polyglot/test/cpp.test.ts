@@ -6,6 +6,7 @@ import test, { before } from "node:test";
 import { cFamilyModule } from "../src/languages/c-family.ts";
 import { findFunctions, loadLanguage } from "../src/languages/index.ts";
 import { parse } from "../src/parser.ts";
+import type { NativeType } from "../src/signatures.ts";
 
 before(() => loadLanguage("cpp"));
 const find = (source: string) => findFunctions(source, "cpp");
@@ -88,4 +89,24 @@ test("two structs with one name: the first wins and the second's scope resolves 
   const { functions, structs } = module("namespace a { struct P { int x; }; P fa(P p) { return p; } }\nnamespace b { struct P { double y; }; P fb(P p) { return p; } }\n");
   assert.deepEqual(structs.map((s) => s.spelling), ["a::P"]);
   assert.deepEqual(functions.map((f) => [f.name, f.params[0]!.type.kind]), [["fa", "struct"], ["fb", "unknown"]]);
+});
+
+test("std::vector and std::array are arrays when qualified; span, a using'd vector, an array element and an expression size are unknown", () => {
+  const source = "#include <vector>\nstd::vector<int> f(const std::vector<int>& xs, std::vector<std::string> names, std::array<float, 3> v, std::vector<std::vector<unsigned char>> m, std::vector<const char*> tags) { return xs; }\nvoid g(std::span<const int> s) {}\nusing std::vector;\nvoid h(vector<int> v) {}\nconstexpr size_t N = 2;\nvoid k(std::array<int, N> a, std::array<int, N + 1> b, std::array<int[2], 2> c) {}\n";
+  const [f, g, h, k] = module(source).functions;
+  assert.deepEqual(f!.returns, { kind: "array", spelling: "std::vector<int>", of: { kind: "int", bits: 32, signed: true, spelling: "int" } });
+  assert.deepEqual(f!.params.map((p) => p.type.kind), ["reference", "array", "array", "array", "array"]);
+  assert.deepEqual((f!.params[0]!.type as { to: NativeType }).to.spelling, "std::vector<int>");
+  assert.deepEqual((f!.params[1]!.type as { of: NativeType }).of, { kind: "string", nullable: false, spelling: "std::string" });
+  assert.equal((f!.params[2]!.type as { length?: number }).length, 3);
+  assert.deepEqual((f!.params[3]!.type as { of: NativeType }).of, { kind: "array", spelling: "std::vector<unsigned char>", of: { kind: "int", bits: 8, signed: false, spelling: "unsigned char" } });
+  assert.deepEqual((f!.params[4]!.type as { of: NativeType }).of, { kind: "string", nullable: true, spelling: "const char*" });
+  assert.deepEqual([g!.params[0]!.type.kind, h!.params[0]!.type.kind], ["unknown", "unknown"]);
+  assert.deepEqual(k!.params.map((p) => (p.type.kind === "array" ? p.type.length : p.type.kind)), [2, "unknown", "unknown"]);
+});
+
+test("a vector of a struct resolves the element in scope; a mutable vector reference is mutable", () => {
+  const [f] = module("namespace geo { struct P { int x; }; int f(const std::vector<P>& ps, std::vector<P>& out) { return 0; } }\n").functions;
+  assert.deepEqual(f!.params[0]!.type, { kind: "reference", mutable: false, spelling: "const std::vector<P>&", to: { kind: "array", spelling: "std::vector<P>", of: { kind: "struct", name: "P", spelling: "P" } } });
+  assert.equal((f!.params[1]!.type as { mutable: boolean }).mutable, true);
 });

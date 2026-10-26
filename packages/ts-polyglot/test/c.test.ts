@@ -7,6 +7,7 @@ import { cFamilyModule } from "../src/languages/c-family.ts";
 import { cType } from "../src/languages/c-types.ts";
 import { findFunctions, languageOf, loadLanguage } from "../src/languages/index.ts";
 import { parse } from "../src/parser.ts";
+import type { NativeType } from "../src/signatures.ts";
 
 before(() => loadLanguage("c"));
 const find = (source: string) => findFunctions(source, "c");
@@ -149,10 +150,10 @@ test("one pointer level around const char is a nullable string; other pointers s
   assert.equal((found[4] as { const: boolean }).const, true);
 });
 
-test("array parameters and pointer results have their own kinds", () => {
-  const [fn] = module("int* p(int a[4], int b[]) { return 0; }").functions;
+test("a fixed array parameter and a pointer result have their own kinds; an unsized array with no length is unknown", () => {
+  const [fn] = module("int* p(const int a[4], int b[]) { return 0; }").functions;
   assert.equal(fn!.returns.kind, "pointer");
-  assert.deepEqual(fn!.params.map((p) => p.type.kind === "array" && p.type.length), [4, undefined]);
+  assert.deepEqual(fn!.params.map((p) => (p.type.kind === "array" ? p.type.length : p.type.kind)), [4, "unknown"]);
 });
 
 test("plain structs in their three forms, with fields, offsets and the glue's spelling", () => {
@@ -176,4 +177,53 @@ test("a struct with a bitfield isn't plain; one with a pointer field is plain bu
   const { structs } = module("struct Bits { int x : 3; };\nstruct Ptr { const char* name; int* p; int a[2]; };\n");
   assert.deepEqual(structs.map((s) => s.name), ["Ptr"]);
   assert.deepEqual(structs[0]!.fields.map((f) => f.type.kind), ["string", "pointer", "array"]);
+});
+
+const field = (source: string, i: number) => module(source).structs[0]!.fields[i]!.type;
+
+test("array sizes: literals in any base and names the file defines; expressions, foreign names and zero are unknown", () => {
+  const source = "#define N 4\n#define P (8)\nconst int M = 2;\nstruct S { int a[0x10]; int b[N]; int c[P]; int d[M]; int e[N * 2]; int f[Q]; int g[0]; };\n";
+  assert.deepEqual([0, 1, 2, 3].map((i) => (field(source, i) as { length?: number }).length), [16, 4, 8, 2]);
+  assert.deepEqual([4, 5, 6].map((i) => field(source, i).kind), ["unknown", "unknown", "unknown"]);
+});
+
+test("fields: char[N] is a bounded string, nested arrays spell their dimensions in order, pointer elements follow the const char* rule, a flexible member is unknown", () => {
+  const source = "struct S { char name[16]; int grid[2][3]; char names[4][8]; const char* tags[3]; unsigned char key[4]; int tail[]; };\n";
+  assert.deepEqual(field(source, 0), { kind: "string", nullable: false, max: 15, spelling: "char[16]" });
+  assert.deepEqual(field(source, 1), { kind: "array", length: 2, spelling: "int[2][3]", of: { kind: "array", length: 3, spelling: "int[3]", of: { kind: "int", bits: 32, signed: true, spelling: "int" } } });
+  assert.deepEqual(field(source, 2), { kind: "array", length: 4, spelling: "char[4][8]", of: { kind: "string", nullable: false, max: 7, spelling: "char[8]" } });
+  assert.deepEqual(field(source, 3), { kind: "array", length: 3, spelling: "const char*[3]", of: { kind: "string", nullable: true, spelling: "const char*" } });
+  assert.equal((field(source, 4) as { of: NativeType }).of.spelling, "unsigned char");
+  assert.equal(field(source, 5).kind, "unknown");
+});
+
+test("an unsized const array parameter pairs with the next integer parameter, which arrays in a row share", () => {
+  const [mean, dot] = module("double mean(const double xs[], int n) { return 0; }\ndouble dot(const double a[], const double b[], size_t n) { return 0; }\n").functions;
+  assert.deepEqual(mean!.params.map((p) => [p.name, p.type.kind, p.length?.name]), [["xs", "array", "n"], ["n", "int", undefined]]);
+  assert.deepEqual(mean!.params[0]!.length, { name: "n", type: { kind: "int", bits: 32, signed: true, spelling: "int" } });
+  assert.deepEqual(dot!.params.map((p) => [p.name, p.type.kind, p.length?.name]), [["a", "array", "n"], ["b", "array", "n"], ["n", "int", undefined]]);
+  assert.deepEqual(find("double mean(const double xs[], int n) { return 0; }")[0]!.params.map((p) => p.name), ["xs", "n"]);
+});
+
+test("the C99 spelling names the length parameter on either side", () => {
+  for (const source of ["double m(size_t n, const double xs[n]) { return 0; }", "double m(const double xs[n], size_t n) { return 0; }"]) {
+    const xs = module(source).functions[0]!.params.find((p) => p.name === "xs")!;
+    assert.equal(xs.type.kind, "array");
+    assert.equal((xs.type as { length?: number }).length, undefined);
+    assert.equal(xs.length?.name, "n");
+  }
+});
+
+test("an unsized array with no length, a non-const one, a pointer with a length, a 2-D one and a non-integer next parameter hide the function", () => {
+  assert.deepEqual(find("void f(const int xs[]) {}\nvoid g(double xs[], size_t n) {}\nvoid h(const double* xs, size_t n) {}\nvoid m(const double g[][3], int rows) {}\nvoid s(const double xs[], double scale, int n) {}\n"), []);
+});
+
+test("a sized array parameter is fixed and consumes no length; char arrays are strings, bounded or counted", () => {
+  const [norm, count, name, longest] = module("float norm(const float v[3], int n) { return 0; }\nsize_t count(const char s[], size_t n) { return 0; }\nvoid name(const char buf[16]) {}\nconst char* longest(const char* const names[], int n) { return 0; }\n").functions;
+  assert.deepEqual(norm!.params.map((p) => [p.name, p.type.kind, (p.type as { length?: number }).length, p.length]), [["v", "array", 3, undefined], ["n", "int", undefined, undefined]]);
+  const counted = count!.params[0]!;
+  assert.deepEqual([counted.type.kind, (counted.type as { nullable: boolean; max?: number }).nullable, (counted.type as { max?: number }).max, counted.length], ["string", false, undefined, { name: "n", type: { kind: "int", bits: 64, signed: false, spelling: "size_t" } }]);
+  assert.deepEqual([name!.params[0]!.type.kind, (name!.params[0]!.type as { max?: number }).max, name!.params[0]!.length], ["string", 15, undefined]);
+  assert.deepEqual(longest!.params[0]!.type, { kind: "array", spelling: "const char*[]", of: { kind: "string", nullable: true, spelling: "const char*" } });
+  assert.equal(longest!.params[0]!.length?.name, "n");
 });

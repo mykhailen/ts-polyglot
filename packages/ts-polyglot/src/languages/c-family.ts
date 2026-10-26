@@ -7,7 +7,7 @@
 import type { Node } from "web-tree-sitter";
 
 import { headerText } from "../parser.ts";
-import { oneLine, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../signatures.ts";
+import { oneLine, parseIntegerLiteral, type NativeFunction, type NativeModule, type NativeStruct, type NativeType, type Param } from "../signatures.ts";
 import { cType } from "./c-types.ts";
 
 /** C spells a struct `struct tag`; C++ spells it by its qualified name, and warns when `struct` names a `class`. */
@@ -22,7 +22,10 @@ const TYPE_SPECIFIERS = new Set(["struct_specifier", "class_specifier", "union_s
 
 export function cFamilyModule(root: Node, source: string, dialect: Dialect): NativeModule {
   const structs = new Structs(dialect);
-  declarations(root, [], (node, path) => collectStruct(node, path, structs));
+  declarations(root, [], (node, path) => {
+    collectStruct(node, path, structs);
+    collectConstant(node, path, structs.constants);
+  });
   structs.typeFields();
   const functions: NativeFunction[] = [];
   declarations(root, [], (node, path) => {
@@ -69,8 +72,56 @@ function collectStruct(node: Node, path: readonly string[], structs: Structs): v
   }
 }
 
+/**
+ * An integer constant the file defines: a `#define` of a literal, or a `const`/`constexpr` variable
+ * initialized with one. An array size may name one; anything the file doesn't define this way is
+ * a size the walker can't read.
+ */
+class Constants {
+  // Keyed by qualified name, like structs; the first definition of a name wins, like everything else.
+  private readonly byKey = new Map<string, number>();
+
+  add(name: string, path: readonly string[], value: number): void {
+    const key = [...path, name].join("::");
+    if (!this.byKey.has(key)) this.byKey.set(key, value);
+  }
+
+  /** A name as written, resolved from inside `scope`: a bare name innermost namespace out, a qualified one from the root. */
+  resolve(spelling: string, scope: readonly string[]): number | undefined {
+    const absolute = spelling.startsWith("::");
+    const segments = (absolute ? spelling.slice(2) : spelling).split("::");
+    const prefixes = absolute || segments.length > 1 ? [[]] : Array.from({ length: scope.length + 1 }, (_, i) => scope.slice(0, scope.length - i));
+    for (const prefix of prefixes) {
+      const found = this.byKey.get([...prefix, ...segments].join("::"));
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+}
+
+/** A `#define NAME <literal>` or a `const`/`constexpr` variable with a literal initializer, parentheses allowed around either. */
+function collectConstant(node: Node, path: readonly string[], constants: Constants): void {
+  if (node.type === "preproc_def") {
+    const name = node.childForFieldName("name");
+    const value = node.childForFieldName("value");
+    const literal = value && parseIntegerLiteral(value.text.trim().replace(/^\((.*)\)$/, "$1"), "c");
+    if (name && literal !== undefined) constants.add(name.text, path, literal);
+  } else if (node.type === "declaration" && node.namedChildren.some((child) => child.type === "type_qualifier" && /^(const|constexpr)$/.test(child.text))) {
+    for (const declarator of node.childrenForFieldName("declarator")) {
+      if (declarator.type !== "init_declarator") continue;
+      const name = declarator.childForFieldName("declarator");
+      let value = declarator.childForFieldName("value");
+      while (value?.type === "parenthesized_expression") value = value.namedChildren[0] ?? null;
+      const literal = value?.type === "number_literal" ? parseIntegerLiteral(value.text, "c") : undefined;
+      if (name?.type === "identifier" && literal !== undefined) constants.add(name.text, path, literal);
+    }
+  }
+}
+
 class Structs {
   readonly all: NativeStruct[] = [];
+  // Collected in the same pass and resolved the same way, so the one object travels with the structs.
+  readonly constants = new Constants();
   // Keyed by qualified name: `geometry::Point` for a typedef or C++ name, `struct geometry::Point` for a tag.
   private readonly byKey = new Map<string, NativeStruct>();
   private readonly pending: { struct: NativeStruct; body: Node }[] = [];
@@ -103,12 +154,13 @@ class Structs {
   /** Types every field once all structs are known, so a field can name a struct defined later in the file. */
   typeFields(): void {
     for (const { struct, body } of this.pending) {
+      const sizes: Sizes = { constant: (name) => this.constants.resolve(name, struct.path) };
       for (const member of body.namedChildren) {
         if (member.type !== "field_declaration" || isStatic(member)) continue;
         const base = baseType(member, struct.path, this);
         for (const declarator of member.childrenForFieldName("declarator")) {
-          const { type, name } = declared(base.type, base.const, declarator);
-          if (name) struct.fields.push({ name: name.text, nameStart: name.startIndex, type });
+          const { type, name } = declared(base.type, base.const, declarator, sizes);
+          if (name) struct.fields.push({ name: name.text, nameStart: name.startIndex, type: fieldArrays(type) });
         }
       }
     }
@@ -168,8 +220,11 @@ function dataMember(node: Node): boolean {
   return false;
 }
 
-/** The declarator a pointer, reference or array declarator wraps, which the grammar sometimes leaves unnamed. */
-const inner = (node: Node): Node | null => node.childForFieldName("declarator") ?? node.namedChildren.find((child) => child.type !== "type_qualifier") ?? null;
+/** The declarator a pointer, reference or array declarator wraps, which the grammar sometimes leaves unnamed. An abstract array's size isn't it. */
+function inner(node: Node): Node | null {
+  const size = node.childForFieldName("size");
+  return node.childForFieldName("declarator") ?? node.namedChildren.find((child) => child.type !== "type_qualifier" && child.id !== size?.id) ?? null;
+}
 
 interface Base {
   type: NativeType;
@@ -182,7 +237,7 @@ function baseType(declaration: Node, scope: readonly string[], structs: Structs)
   return { type: typeNode ? namedType(typeNode, scope, structs) : { kind: "unknown", spelling: "" }, const: hasConst(declaration) };
 }
 
-/** A type node by itself: a primitive or string from the table, a struct from the file, or unknown. */
+/** A type node by itself: a primitive or string from the table, a std::vector or std::array, a struct from the file, or unknown. */
 function namedType(typeNode: Node, scope: readonly string[], structs: Structs): NativeType {
   const spelling = oneLine(typeNode.text);
   if (typeNode.type === "struct_specifier" || typeNode.type === "class_specifier") {
@@ -191,11 +246,64 @@ function namedType(typeNode: Node, scope: readonly string[], structs: Structs): 
   }
   const known = cType(spelling);
   if (known) return { ...known.type, spelling };
+  if (typeNode.type === "qualified_identifier") {
+    const container = stdContainer(typeNode, scope, structs);
+    if (container) return container;
+  }
   if (typeNode.type === "type_identifier" || typeNode.type === "qualified_identifier") {
     const found = structs.resolve(spelling, scope);
     if (found) return { kind: "struct", name: found.name, spelling };
   }
   return { kind: "unknown", spelling };
+}
+
+/**
+ * `std::vector<T>` and `std::array<T, N>`, qualified: an unqualified `vector` could be anything. The
+ * element goes through the declarator rules, so `const char*` is a string; one that is itself a
+ * C array (`std::array<int[2], 2>`) is unknown, since nothing converts that storage.
+ */
+function stdContainer(typeNode: Node, scope: readonly string[], structs: Structs): NativeType | undefined {
+  const template = typeNode.childForFieldName("name");
+  if (typeNode.childForFieldName("scope")?.text !== "std" || template?.type !== "template_type") return undefined;
+  const which = template.childForFieldName("name")?.text;
+  const args = template.childForFieldName("arguments")?.namedChildren.filter((child) => child.type !== "comment") ?? [];
+  const spelling = oneLine(typeNode.text);
+  const unknown: NativeType = { kind: "unknown", spelling };
+  if ((which !== "vector" && which !== "array") || args.length !== (which === "vector" ? 1 : 2) || args[0]!.type !== "type_descriptor") return undefined;
+  const descriptor = args[0]!;
+  const base = baseType(descriptor, scope, structs);
+  const of = declared(base.type, base.const, descriptor.childForFieldName("declarator"), { constant: (name) => structs.constants.resolve(name, scope) }).type;
+  if (of.kind === "array" && cStyle(of)) return unknown;
+  if (which === "vector") return { kind: "array", of, spelling };
+  // A named size parses as a type_descriptor here, so its text is looked up like an identifier would be.
+  const size = args[1]!;
+  const length = size.type === "number_literal" ? parseIntegerLiteral(size.text, "c") : size.type === "type_descriptor" ? structs.constants.resolve(oneLine(size.text), scope) : undefined;
+  return length === undefined ? unknown : { kind: "array", of, length, spelling };
+}
+
+/** How an array declarator's size is read: a name is a file constant, or in a parameter list possibly another parameter (`xs[n]`). */
+interface Sizes {
+  constant(name: string): number | undefined;
+  parameter?(name: string): boolean;
+}
+
+/**
+ * The array rules for a field: `char[N]` is a bounded string (so `char[M][N]` is an array of them),
+ * a flexible member is nothing the glue can size, and a size the walker couldn't read already made
+ * the type unknown.
+ */
+function fieldArrays(type: NativeType): NativeType {
+  if (type.kind !== "array") return type;
+  if (cStyle(type) && type.length === undefined) return { kind: "unknown", spelling: type.spelling };
+  return charArray(type) ?? { ...type, of: fieldArrays(type.of) };
+}
+
+/** Whether an array is a C declarator (`T x[N]`, `T xs[]`) rather than a std container, which the C rules leave alone. */
+const cStyle = (type: NativeType & { kind: "array" }) => type.spelling.endsWith("]");
+
+/** A fixed `char[N]`, which holds N - 1 bytes before its NUL, as a bounded string; undefined for any other array (a `std::array<char, N>` is numbers). */
+function charArray(type: NativeType & { kind: "array" }): NativeType | undefined {
+  return cStyle(type) && type.length !== undefined && type.of.kind === "int" && type.of.spelling === "char" ? { kind: "string", nullable: false, max: type.length - 1, spelling: type.spelling } : undefined;
 }
 
 interface Declared {
@@ -207,18 +315,21 @@ interface Declared {
 }
 
 /** Applies a declarator chain, outermost first, to a base type. The chain's order is the type's: `*a[4]` is an array of pointers. */
-function declared(base: NativeType, baseConst: boolean, declarator: Node | null): Declared {
+function declared(base: NativeType, baseConst: boolean, declarator: Node | null, sizes: Sizes): Declared {
   let type = base;
   // Whether the thing the next `*` or `&` refers to is const: the base's qualifier, then each pointer's own.
   let pointee = baseConst;
+  // A size the walker can't read makes the whole type unknown, but the chain still has the name to find.
+  let unreadable = false;
   let node = declarator;
+  const done = (): NativeType => (unreadable ? { kind: "unknown", spelling: type.spelling } : cString(type));
   while (node) {
     switch (node.type) {
       case "identifier":
       case "field_identifier":
-        return { type: cString(type), name: node, fn: undefined };
+        return { type: done(), name: node, fn: undefined };
       case "function_declarator":
-        return { type: cString(type), name: undefined, fn: node };
+        return { type: done(), name: undefined, fn: node };
       case "pointer_declarator":
       case "abstract_pointer_declarator":
         type = { kind: "pointer", to: type, const: pointee, spelling: `${pointee ? "const " : ""}${type.spelling}*` };
@@ -236,8 +347,12 @@ function declared(base: NativeType, baseConst: boolean, declarator: Node | null)
       case "array_declarator":
       case "abstract_array_declarator": {
         const size = node.childForFieldName("size");
-        const spelling = `${type.spelling}[${size?.text ?? ""}]`;
-        type = size && /^\d+$/.test(size.text) ? { kind: "array", of: type, length: Number(size.text), spelling } : { kind: "array", of: type, spelling };
+        // The chain is walked outermost first but `a[2][3]` is read inner first, so a new dimension goes before the ones already there.
+        const dims = type.kind === "array" ? type.spelling.indexOf("[") : type.spelling.length;
+        const spelling = `${type.spelling.slice(0, dims)}[${size?.text ?? ""}]${type.spelling.slice(dims)}`;
+        const length = !size ? undefined : size.type === "number_literal" ? parseIntegerLiteral(size.text, "c") : size.type === "identifier" && sizes.parameter?.(size.text) ? undefined : size.type === "identifier" ? sizes.constant(size.text) : undefined;
+        if (size && length === undefined && !(size.type === "identifier" && sizes.parameter?.(size.text))) unreadable = true;
+        type = length === undefined ? { kind: "array", of: type, spelling } : { kind: "array", of: type, length, spelling };
         node = inner(node);
         break;
       }
@@ -245,11 +360,12 @@ function declared(base: NativeType, baseConst: boolean, declarator: Node | null)
         return { type: { kind: "unknown", spelling: type.spelling }, name: undefined, fn: undefined };
     }
   }
-  return { type: cString(type), name: undefined, fn: undefined };
+  return { type: done(), name: undefined, fn: undefined };
 }
 
-/** Exactly one pointer level around `const char` is a C string, which may be NULL; every other pointer stays a pointer. */
+/** Exactly one pointer level around `const char` is a C string, which may be NULL; every other pointer stays a pointer. Array elements follow the same rule. */
 function cString(type: NativeType): NativeType {
+  if (type.kind === "array") return { ...type, of: cString(type.of) };
   return type.kind === "pointer" && type.const && type.to.kind === "int" && type.to.spelling === "char" ? { kind: "string", nullable: true, spelling: "const char*" } : type;
 }
 
@@ -262,7 +378,7 @@ function definition(node: Node, path: readonly string[], structs: Structs, sourc
   if (!typeNode || !declarator || declarator.hasError) return undefined;
   // Declarators between the type and the function declarator belong to the result: `int* f()`.
   const base = baseType(node, path, structs);
-  const { type: returns, fn } = declared(base.type, base.const, declarator);
+  const { type: returns, fn } = declared(base.type, base.const, declarator, { constant: (name) => structs.constants.resolve(name, path) });
   if (!fn) return undefined;
   // A qualified name (`geo::f`, `Foo::bar`) is an out-of-line definition: a class method can't be
   // told from a namespace function here, so neither exports.
@@ -285,7 +401,26 @@ function trailingReturn(fn: Node, scope: readonly string[], structs: Structs): N
   const descriptor = fn.namedChildren.find((child) => child.type === "trailing_return_type")?.namedChildren[0];
   if (!descriptor) return { kind: "unknown", spelling: "auto" };
   const base = baseType(descriptor, scope, structs);
-  return declared(base.type, base.const, descriptor.childForFieldName("declarator")).type;
+  return declared(base.type, base.const, descriptor.childForFieldName("declarator"), { constant: (name) => structs.constants.resolve(name, scope) }).type;
+}
+
+/** The identifier a declarator chain ends in, if any. */
+function declaratorName(node: Node | null): string | undefined {
+  for (let current = node; current; current = inner(current)) {
+    if (current.type === "identifier" || current.type === "field_identifier") return current.text;
+    if (!["pointer_declarator", "reference_declarator", "array_declarator", "parenthesized_declarator"].includes(current.type)) return undefined;
+  }
+  return undefined;
+}
+
+/** The parameter an array declarator's size names, C99 style (`xs[n]`), if it names one. */
+function sizeParameter(node: Node | null, isParameter: (name: string) => boolean): string | undefined {
+  for (let current = node; current; current = inner(current)) {
+    const size = current.type === "array_declarator" ? current.childForFieldName("size") : null;
+    if (size?.type === "identifier" && isParameter(size.text)) return size.text;
+    if (!["pointer_declarator", "array_declarator", "parenthesized_declarator"].includes(current.type)) return undefined;
+  }
+  return undefined;
 }
 
 function parameters(list: Node | null, scope: readonly string[], structs: Structs): Param[] | undefined {
@@ -294,16 +429,62 @@ function parameters(list: Node | null, scope: readonly string[], structs: Struct
   // `f(void)` declares no parameters.
   const [only] = declarations;
   if (declarations.length === 1 && only!.type === "parameter_declaration" && !only!.childForFieldName("declarator") && only!.childForFieldName("type")?.text === "void") return [];
+  // A size may name a parameter, which shadows a file constant of the same name, so the names come first.
+  const names = new Set(declarations.map((declaration) => declaratorName(declaration.childForFieldName("declarator"))).filter((name) => name !== undefined));
+  const sizes: Sizes = { constant: (name) => structs.constants.resolve(name, scope), parameter: (name) => names.has(name) };
   const params: Param[] = [];
+  const namedLengths: (string | undefined)[] = [];
   for (const [index, declaration] of declarations.entries()) {
     // A default argument (`optional_parameter_declaration`) is still a required parameter: the glue
     // always passes every argument. Anything else is `...`, which nothing here can carry.
     if (declaration.type !== "parameter_declaration" && declaration.type !== "optional_parameter_declaration") return undefined;
     const base = baseType(declaration, scope, structs);
-    const { type, name, fn } = declared(base.type, base.const, declaration.childForFieldName("declarator"));
+    const declarator = declaration.childForFieldName("declarator");
+    const { type, name, fn } = declared(base.type, base.const, declarator, sizes);
     // A function-pointer parameter has a function declarator of its own; the model has no shape for it.
     const resolved: NativeType = fn ? { kind: "unknown", spelling: oneLine(declaration.text) } : type;
     params.push(name ? { name: name.text, nameStart: name.startIndex, type: resolved } : { name: `arg${index}`, type: resolved });
+    namedLengths.push(sizeParameter(declarator, sizes.parameter!));
   }
+  pairLengths(params, declarations, namedLengths);
+  for (const param of params) param.type = paramArrays(param.type);
   return params;
+}
+
+/**
+ * The C length rule. An unsized array parameter's length is the parameter its size names, else the
+ * first integer parameter after it, shared by the unsized arrays in a row before that one. Without
+ * either, or when the function could write the elements (they aren't const, and aren't pointers
+ * to const), or when the elements are arrays themselves, the parameter is unknown and hides the
+ * function. A paired `char` array is a counted string.
+ */
+function pairLengths(params: Param[], declarations: Node[], namedLengths: (string | undefined)[]): void {
+  // A std::vector is an unsized array too, but it carries its own length.
+  const unsized = (param: Param) => param.type.kind === "array" && param.type.length === undefined && cStyle(param.type);
+  const hide = (param: Param) => (param.type = { kind: "unknown", spelling: param.type.spelling });
+  const pair = (param: Param, length: Param | undefined, declaration: Node) => {
+    const element = (param.type as NativeType & { kind: "array" }).of;
+    if (!length || length.type.kind !== "int" || element.kind === "array" || (element.kind !== "string" && !hasConst(declaration))) return hide(param);
+    param.length = { name: length.name, type: length.type };
+    if (element.kind === "int" && element.spelling === "char") param.type = { kind: "string", nullable: false, spelling: param.type.spelling };
+  };
+  for (let i = 0; i < params.length; i++) {
+    if (!unsized(params[i]!)) continue;
+    const named = namedLengths[i];
+    if (named) {
+      pair(params[i]!, params.find((candidate) => candidate.name === named), declarations[i]!);
+      continue;
+    }
+    let end = i;
+    while (end < params.length && unsized(params[end]!) && !namedLengths[end]) end++;
+    const length = params[end];
+    for (let j = i; j < end; j++) pair(params[j]!, length && !unsized(length) ? length : undefined, declarations[j]!);
+    i = end - 1;
+  }
+}
+
+/** The array rules for a parameter after pairing: a fixed `char[N]` is a bounded string, nested fixed arrays recurse. */
+function paramArrays(type: NativeType): NativeType {
+  if (type.kind !== "array" || type.length === undefined) return type;
+  return charArray(type) ?? { ...type, of: paramArrays(type.of) };
 }
