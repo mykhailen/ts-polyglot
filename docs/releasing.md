@@ -5,40 +5,6 @@ the tag here; pushing them makes GitHub Actions publish to npm and create the Gi
 token is involved anywhere: the workflow authenticates with npm's trusted publishing (OIDC), and npm
 attaches provenance to each version it publishes that way.
 
-## Once: let the workflow publish
-
-npm has to trust `.github/workflows/release.yml` for each package. Do this right before the first
-release: a configuration that hasn't published within 2 days expires and has to be recreated.
-
-For each of `ts-polyglot` and `create-ts-polyglot`, on npmjs.com: the package → Settings → Trusted
-Publisher → GitHub Actions:
-
-| Field | Value |
-| --- | --- |
-| Organization or user | `mykhailen` |
-| Repository | `ts-polyglot` |
-| Workflow filename | `release.yml` |
-| Environment name | leave empty |
-| Allowed actions | tick **Allow npm publish**. New configurations allow only `npm stage publish`, and the workflow runs `npm publish` |
-
-Or from a terminal, which needs npm 11.15 or later (`npx npm@latest` runs it without upgrading):
-
-```sh
-npx npm@latest trust github ts-polyglot --repo mykhailen/ts-polyglot --file release.yml --allow-publish
-npx npm@latest trust github create-ts-polyglot --repo mykhailen/ts-polyglot --file release.yml --allow-publish
-npx npm@latest trust list ts-polyglot
-```
-
-Each one asks for 2FA.
-
-After the first release has published, for both packages: Settings → Publishing access → **Require
-two-factor authentication and disallow tokens**, and delete the publish token from `~/.npmrc`.
-Trusted publishing keeps working; tokens stop.
-
-What breaks the trust silently: renaming `release.yml` (reconfigure both packages), renaming or
-transferring the GitHub repository (delete and recreate both configurations), or a `repository.url`
-in a package.json that no longer matches `github.com/mykhailen/ts-polyglot`.
-
 ## Each release
 
 1. In `CHANGELOG.md`, write what changed under `### x.y.z (unreleased)`, under **both**

@@ -135,7 +135,7 @@ and by `&T` in Rust: the callee borrows the glue's copy for the call.
 | --- | --- | --- |
 | `const char*` (one pointer level; `char const*` too) | | `string \| null` |
 | `std::string`, `const std::string&`, `std::string_view` | `&str`, `String`, `&String`; `&'static str` as a result | `string` |
-| `char name[N]`, as a struct field or a parameter | | `string`, of at most N − 1 UTF-8 bytes |
+| `char name[N]` as a struct field, `const char name[N]` as a parameter | | `string`, of at most N − 1 UTF-8 bytes |
 | `const char s[]` with a length parameter (see [C arrays](#c-arrays-and-their-length-parameter)) | | `string` |
 
 Text is UTF-8 on the native side, both ways. A `const char*` a function returns is copied and never
@@ -163,7 +163,7 @@ value: in, the object is read field by field, so extra properties are ignored an
 | C and C++ | Rust | TypeScript |
 | --- | --- | --- |
 | `std::vector<T>`, `const std::vector<T>&`; `const T xs[]` with a length parameter | `Vec<T>`, `&[T]`, `&Vec<T>`; `&'static [T]` as a result | `readonly T[]` as a parameter; `T[]` as a result or a field |
-| `std::array<T, N>`, `const std::array<T, N>&`; `T x[N]` as a field or a parameter | `[T; N]`, `&[T; N]` | a tuple of N: `readonly [T, T, T]` as a parameter, `[T, T, T]` as a result or a field |
+| `std::array<T, N>`, `const std::array<T, N>&`; `T x[N]` as a field, `const T x[N]` as a parameter | `[T; N]`, `&[T; N]` | a tuple of N: `readonly [T, T, T]` as a parameter, `[T, T, T]` as a result or a field |
 | any of those with an unsigned 8-bit element: `uint8_t`, `unsigned char`, `u8` | | `Uint8Array`, whatever the length |
 
 `T` is any type in these tables, so arrays nest to any depth and the TypeScript type follows:
@@ -175,10 +175,10 @@ and `Vec<Vec<u8>>` is `Uint8Array[]`. Only unsigned 8-bit elements make a `Uint8
 is a `Uint8Array` and is accepted; no other typed array is, and a typed array isn't an array either,
 so a `Float64Array` for a `readonly number[]` is a `TypeError` (`Array.from` it first).
 
-A size `N` is an integer literal in any base, or a name the same file defines as one (`#define`,
-`const`, `constexpr`, a Rust `const`); any other size hides the function. `std::vector` and
-`std::array` must be spelled with `std::` (`using std::vector` isn't followed); `Vec<T>` may be
-spelled `std::vec::Vec<T>`.
+A size `N` is an integer literal in any base, digit separators included (`0x10`, `0b100`, `1'000`,
+Rust's `1_000`), or a name the same file defines as one (`#define`, `const`, `constexpr`, a Rust
+`const`); any other size hides the function. `std::vector` and `std::array` must be spelled with
+`std::` (`using std::vector` isn't followed); `Vec<T>` may be spelled `std::vec::Vec<T>`.
 
 Arrays cross by value, as copies: the native side never sees the JavaScript array or buffer, a
 result is a new `Array` or a new `Uint8Array` over its own `ArrayBuffer` (not a `Buffer`), and a
@@ -211,8 +211,9 @@ norm(v: readonly [number, number, number]): number;
 - `const char s[]` paired this way is a `string`, and the length parameter gets its byte count.
 - A sized array, `const float v[3]` or `const int m[2][2]`, is a tuple and takes no length
   parameter.
-- Hidden: an unsized array with no integer parameter after it, one whose elements aren't const (the
-  function could write into them), and an unsized array of arrays (`const double m[][3]`).
+- Hidden: an unsized array with no integer parameter after it, an array of any size whose elements
+  aren't const (the function could write into them), and an unsized array of arrays
+  (`const double m[][3]`).
 
 ### Crossing in: the checks
 
@@ -230,9 +231,9 @@ from the parameter, with the function's name in front: `area(): p.pts[0].y must 
   hold a NUL character, since C ends the string there, and a `char[N]` holds at most N − 1 bytes.
 - A struct takes an object that isn't `null` or an array, read field by field: extra properties are
   ignored; a missing field reads as `undefined` and fails its own check.
-- An array takes an array (`Array.isArray`; a typed array or a Proxy isn't one), of exactly N
-  elements when the length is fixed, each element checked by its own rule. A hole reads as
-  `undefined`.
+- An array takes a real `Array`, as Node-API's `napi_is_array` sees it: a typed array, an
+  `arguments` object or a Proxy, even one over an array, isn't one. It has exactly N elements when
+  the length is fixed, each element checked by its own rule. A hole reads as `undefined`.
 - A `Uint8Array` takes a `Uint8Array` or a `Buffer`, not detached, of exactly N bytes when the
   length is fixed; a `number[]`, an `ArrayBuffer` or another typed array is rejected. The bytes are
   copied before the call.

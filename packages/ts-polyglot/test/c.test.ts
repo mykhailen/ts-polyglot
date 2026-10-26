@@ -182,8 +182,8 @@ test("a struct with a bitfield isn't plain; one with a pointer field is plain bu
 const field = (source: string, i: number) => module(source).structs[0]!.fields[i]!.type;
 
 test("array sizes: literals in any base and names the file defines; expressions, foreign names and zero are unknown", () => {
-  const source = "#define N 4\n#define P (8)\n#define R 5 // with a comment\n#define T /* here */ 6\nconst int M = 2;\nstruct S { int a[0x10]; int b[N]; int c[P]; int d[M]; int e[N * 2]; int f[Q]; int g[0]; int r[R]; int t[T]; };\n";
-  assert.deepEqual([0, 1, 2, 3, 7, 8].map((i) => (field(source, i) as { length?: number }).length), [16, 4, 8, 2, 5, 6]);
+  const source = "#define N 4\n#define P (8)\n#define R 5 // with a comment\n#define T /* here */ 6\nconst int M = 2;\nstruct S { int a[0x10]; int b[N]; int c[P]; int d[M]; int e[N * 2]; int f[Q]; int g[0]; int r[R]; int t[T]; int h[0b100]; int o[010]; };\n";
+  assert.deepEqual([0, 1, 2, 3, 7, 8, 9, 10].map((i) => (field(source, i) as { length?: number }).length), [16, 4, 8, 2, 5, 6, 4, 8]);
   assert.deepEqual([4, 5, 6].map((i) => field(source, i).kind), ["unknown", "unknown", "unknown"]);
 });
 
@@ -216,6 +216,12 @@ test("the C99 spelling names the length parameter on either side", () => {
 
 test("an unsized array with no length, a non-const one, a pointer with a length, a 2-D one and a non-integer next parameter hide the function", () => {
   assert.deepEqual(find("void f(const int xs[]) {}\nvoid g(double xs[], size_t n) {}\nvoid h(const double* xs, size_t n) {}\nvoid m(const double g[][3], int rows) {}\nvoid s(const double xs[], double scale, int n) {}\n"), []);
+});
+
+test("a sized array parameter that isn't const hides the function too: the glue's buffer is the argument's size, not the array's", () => {
+  // `fill` is the C out-buffer idiom; passing it the glue's `len + 1` bytes would let it write past them.
+  assert.deepEqual(find("void fill(char out[8]) {}\nvoid scale(float v[3]) {}\nvoid rows(int m[2][2]) {}\n"), []);
+  assert.deepEqual(find("void name(const char buf[8]) {}\nvoid norm(float const v[3]) {}\n").map((f) => f.name), ["name", "norm"]);
 });
 
 test("a sized array parameter is fixed and consumes no length; char arrays are strings, bounded or counted", () => {

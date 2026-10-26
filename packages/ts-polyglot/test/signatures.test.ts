@@ -73,7 +73,7 @@ test("visibleParams hides a parameter that is another's length, wherever it sits
 });
 
 test("parseIntegerLiteral reads every base, separators and suffixes, and rejects zero, names, expressions and floats", () => {
-  assert.deepEqual(["4", "0x10", "0X1f", "010", "16u", "32UL", "7ll"].map((t) => parseIntegerLiteral(t, "c")), [4, 16, 31, 8, 16, 32, 7]);
+  assert.deepEqual(["4", "0x10", "0X1f", "010", "0b101", "0B11", "1'000", "0x1'F", "16u", "32UL", "7ll"].map((t) => parseIntegerLiteral(t, "c")), [4, 16, 31, 8, 5, 3, 1000, 31, 16, 32, 7]);
   assert.deepEqual(["4", "0x10", "0o17", "0b101", "1_000", "4usize", "8u8", "010"].map((t) => parseIntegerLiteral(t, "rust")), [4, 16, 15, 5, 1000, 4, 8, 10]);
   for (const t of ["0", "N", "2 + 1", "", "1e3", "1.5", "(32)", "-1", "99999999999999999999"]) assert.equal(parseIntegerLiteral(t, "c"), undefined, t);
 });

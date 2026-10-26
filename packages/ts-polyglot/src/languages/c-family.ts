@@ -450,7 +450,7 @@ function parameters(list: Node | null, scope: readonly string[], structs: Struct
     namedLengths.push(sizeParameter(declarator, sizes.parameter!));
   }
   pairLengths(params, declarations, namedLengths);
-  for (const param of params) param.type = paramArrays(param.type);
+  for (const [i, param] of params.entries()) param.type = paramArrays(param.type, hasConst(declarations[i]!));
   return params;
 }
 
@@ -486,8 +486,15 @@ function pairLengths(params: Param[], declarations: Node[], namedLengths: (strin
   }
 }
 
-/** The array rules for a parameter after pairing: a fixed `char[N]` is a bounded string, nested fixed arrays recurse. */
-function paramArrays(type: NativeType): NativeType {
+/**
+ * The array rules for a parameter after pairing: a fixed `char[N]` is a bounded string, nested fixed
+ * arrays recurse. A fixed C array whose elements aren't const hides the function, as an unsized one
+ * does: the function could write into it, and a `char[N]` would be writing into the glue's buffer,
+ * which is the argument's size, not N.
+ */
+function paramArrays(type: NativeType, isConst: boolean): NativeType {
   if (type.kind !== "array" || type.length === undefined) return type;
-  return charArray(type) ?? { ...type, of: paramArrays(type.of) };
+  const innermost = (t: NativeType): NativeType => (t.kind === "array" ? innermost(t.of) : t);
+  if (cStyle(type) && !isConst && innermost(type).kind !== "string") return { kind: "unknown", spelling: type.spelling };
+  return charArray(type) ?? { ...type, of: paramArrays(type.of, isConst) };
 }

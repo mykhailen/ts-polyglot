@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // `static` keeps a function private to this file, so TypeScript doesn't see it.
 static double square(double x) {

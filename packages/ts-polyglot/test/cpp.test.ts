@@ -105,6 +105,10 @@ test("std::vector and std::array are arrays when qualified; span, a using'd vect
   assert.deepEqual(k!.params.map((p) => (p.type.kind === "array" ? p.type.length : p.type.kind)), [2, "unknown", "unknown"]);
 });
 
+test("a size may be a binary literal or carry C++14 digit separators", () => {
+  assert.deepEqual(types("void f(const int a[1'000], const int b[0b100], std::array<int, 2'0> c) {}").map((t) => (t as { length?: number }).length), [1000, 4, 20]);
+});
+
 test("a C-style array of std types keeps the container's spelling whole", () => {
   const { structs, functions } = module("#include <string>\n#include <vector>\nstruct S { std::string names[2]; std::vector<int> rows[2]; std::array<int, 2> grid[3]; };\nint g(const std::string ns[], size_t n) { return 0; }\n");
   assert.deepEqual(structs[0]!.fields.map((f) => f.type.spelling), ["std::string[2]", "std::vector<int>[2]", "std::array<int, 2>[3]"]);

@@ -84,11 +84,12 @@ export function visibleParams(fn: NativeFunction): Param[] {
  * `unknown` rather than guess at.
  */
 export function parseIntegerLiteral(text: string, language: "c" | "rust"): number | undefined {
-  const digits = language === "rust" ? text.trim().replace(/_/g, "").replace(/[ui](8|16|32|64|128|size)$/, "") : text.trim().replace(/[uUlL]+$/, "");
+  // Rust separates digits with `_`, C++14 and C23 with `'`.
+  const digits = language === "rust" ? text.trim().replace(/_/g, "").replace(/[ui](8|16|32|64|128|size)$/, "") : text.trim().replace(/'/g, "").replace(/[uUlL]+$/, "");
   let value: number;
   if (/^0[xX][0-9a-fA-F]+$/.test(digits)) value = parseInt(digits.slice(2), 16);
+  else if (/^0[bB][01]+$/.test(digits)) value = parseInt(digits.slice(2), 2);
   else if (language === "rust" && /^0o[0-7]+$/.test(digits)) value = parseInt(digits.slice(2), 8);
-  else if (language === "rust" && /^0b[01]+$/.test(digits)) value = parseInt(digits.slice(2), 2);
   // A leading zero is octal in C; Rust has no such rule.
   else if (language === "c" && /^0[0-7]+$/.test(digits)) value = parseInt(digits, 8);
   else if (/^[0-9]+$/.test(digits)) value = Number(digits);

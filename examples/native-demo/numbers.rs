@@ -20,7 +20,7 @@ pub fn describe(n: i64) -> String {
     format!("{n} is {}", if n % 2 == 0 { "even" } else { "odd" })
 }
 
-// Bytes are a Uint8Array on both sides: a `&[u8]` borrows the caller's buffer, a `Vec<u8>` comes back as a fresh one.
+// Bytes are a Uint8Array on both sides: a `&[u8]` sees a copy of the caller's bytes, a `Vec<u8>` comes back as a fresh one.
 pub fn reverse(data: &[u8]) -> Vec<u8> {
     data.iter().rev().copied().collect()
 }
