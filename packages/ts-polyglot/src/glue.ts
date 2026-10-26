@@ -2,8 +2,8 @@
 // compiles to. The glue knows only the language's bridge (what to call, with which C types) and the
 // marshaling helpers; one wrapper per function reads its arguments strictly, calls, checks the error
 // slot, makes the result and cleans up on every path.
-import type { AbiType, Bridge, Callee } from "./languages/language.ts";
-import { ABI_HEADER, HELPERS, cleanup, makeResult, readArgument, structHelpers } from "./marshal.ts";
+import { abiId, type AbiType, type Bridge, type Callee } from "./languages/language.ts";
+import { ABI_HEADER, HELPERS, arrayHelpers, cleanup, helperPrototype, makeResult, readArgument, structHelpers } from "./marshal.ts";
 import { visibleParams, type NativeFunction, type NativeModule } from "./signatures.ts";
 
 export function glueSource(module: NativeModule, bridge: Bridge): string {
@@ -20,7 +20,10 @@ export function glueSource(module: NativeModule, bridge: Bridge): string {
     "",
     HELPERS,
     "",
-    ...structs(callees).map(structHelpers),
+    // Declared first, then defined in any order: an array of structs of arrays references both ways.
+    ...helpers(callees).map(helperPrototype),
+    "",
+    ...helpers(callees).map((abi) => (abi.kind === "struct" ? structHelpers(abi) : arrayHelpers(abi))),
   ];
   module.functions.forEach((fn, i) => lines.push(...wrapper(fn, callees[i]!)));
   lines.push("NAPI_MODULE_INIT() {", "  napi_value fn;");
@@ -34,21 +37,24 @@ export function glueSource(module: NativeModule, bridge: Bridge): string {
   return lines.join("\n");
 }
 
-/** Every struct the callees pass or return, each once, fields before the structs that hold them. */
-function structs(callees: Callee[]): (AbiType & { kind: "struct" })[] {
-  const ordered: (AbiType & { kind: "struct" })[] = [];
+/** Every struct and array type the callees pass or return, directly or inside one another, each once. */
+function helpers(callees: Callee[]): (AbiType & { kind: "struct" | "array" })[] {
+  const found: (AbiType & { kind: "struct" | "array" })[] = [];
   const seen = new Set<string>();
   const visit = (abi: AbiType) => {
-    if (abi.kind !== "struct" || seen.has(abi.name)) return;
-    seen.add(abi.name);
-    for (const field of abi.fields) visit(field.type);
-    ordered.push(abi);
+    if (abi.kind !== "struct" && abi.kind !== "array") return;
+    const key = abi.kind === "struct" ? `struct ${abi.name}` : abiId(abi);
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (abi.kind === "struct") for (const field of abi.fields) visit(field.type);
+    else visit(abi.of);
+    found.push(abi);
   };
   for (const callee of callees) {
     callee.params.forEach(visit);
     visit(callee.returns);
   }
-  return ordered;
+  return found;
 }
 
 function wrapper(fn: NativeFunction, callee: Callee): string[] {

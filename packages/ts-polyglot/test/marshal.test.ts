@@ -2,9 +2,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { glueSource } from "../src/glue.ts";
 import { abiId, type AbiType } from "../src/languages/language.ts";
-import { jsType, structHelpers } from "../src/marshal.ts";
-import type { NativeType } from "../src/signatures.ts";
+import { ABI_HEADER, HELPERS, arrayHelpers, cleanup, jsType, makeResult, readArgument, structHelpers } from "../src/marshal.ts";
+import type { NativeFunction, NativeType } from "../src/signatures.ts";
 
 const int = (bits: 8 | 16 | 32 | 64, signed: boolean): NativeType => ({ kind: "int", bits, signed, spelling: "x" });
 
@@ -55,4 +56,68 @@ test("jsType for arrays: readonly in parameters, tuples for fixed lengths, Uint8
   assert.equal(jsType(arr({ kind: "struct", name: "Point", spelling: "Point" }), "field"), "Point[]");
   assert.equal(jsType({ kind: "string", nullable: false, max: 15, spelling: "char[16]" }, "field"), "string");
   assert.equal(jsType({ kind: "reference", mutable: false, to: arr(int(32, true)), spelling: "&[i32]" }, "param"), "readonly number[]");
+});
+
+const i32: AbiType = { kind: "int", c: "int32_t", bits: 32, signed: true, min: "INT32_MIN", max: "INT32_MAX" };
+const u8: AbiType = { kind: "int", c: "uint8_t", bits: 8, signed: false, min: "0", max: "UINT8_MAX" };
+const str: AbiType = { kind: "string", c: "ts_polyglot_string" };
+const list = (of: AbiType, length?: number): AbiType & { kind: "array" } => ({ kind: "array", c: "ts_polyglot_array", of, length });
+
+test("the ABI header and the helpers carry the array type, the bytes path and the bounded string", () => {
+  assert.match(ABI_HEADER, /typedef struct \{ void\* ptr; size_t len; void \(\*release\)\(void\*, size_t\); \} ts_polyglot_array;/);
+  assert.match(HELPERS, /static bool ts_polyglot_read_bytes\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const char\* path\)/);
+  assert.match(HELPERS, /if \(type != napi_uint8_array\) return ts_polyglot_fail\(env, false, fn, path, "a Uint8Array"\);/);
+  assert.match(HELPERS, /"a Uint8Array that isn't detached"/);
+  assert.match(HELPERS, /static bool ts_polyglot_read_string\(napi_env env, napi_value value, ts_polyglot_string\* out, size_t max, const char\* fn, const char\* path\)/);
+  assert.match(HELPERS, /napi_create_typedarray\(env, napi_uint8_array, /);
+});
+
+test("an array reader checks for an array, allocates zeroed storage before reading, extends the path with the index and stops on a throwing getter", () => {
+  const text = arrayHelpers(list(i32));
+  assert.match(text, /static bool ts_polyglot_read_array_int_int32_t\(napi_env env, napi_value value, ts_polyglot_array\* out, const char\* fn, const char\* path\) \{/);
+  assert.match(text, /if \(!is_array\) return ts_polyglot_fail\(env, false, fn, path, "an array"\);/);
+  assert.match(text, /items = \(int32_t\*\)ts_polyglot_alloc\(length, sizeof\(int32_t\)\);/);
+  assert.match(text, /out->ptr = items;\n\s*out->len = length;\n\s*out->release = NULL;\n\s*for \(/);
+  assert.match(text, /snprintf\(child, sizeof child, "%s\[%u\]", path, \(unsigned\)i\);/);
+  assert.match(text, /if \(napi_get_element\(env, value, i, &element\) != napi_ok\) return false;/);
+  assert.match(text, /static napi_value ts_polyglot_make_array_int_int32_t\(napi_env env, ts_polyglot_array value\) \{/);
+  assert.match(text, /napi_create_array_with_length\(env, length, &result\);/);
+  assert.match(text, /if \(value\.release\) value\.release\(value\.ptr, value\.len\);/);
+});
+
+test("a fixed length is checked before anything is allocated; bytes go through the typed-array helpers", () => {
+  const fixed = arrayHelpers(list({ kind: "float", c: "float", bits: 32 }, 3));
+  assert.ok(fixed.indexOf('if (length != 3) return ts_polyglot_fail_must(env, true, fn, path, "have 3 elements");') < fixed.indexOf("ts_polyglot_alloc"));
+  const bytes = arrayHelpers(list(u8, 16));
+  assert.match(bytes, /if \(!ts_polyglot_read_bytes\(env, value, out, fn, path\)\) return false;\n\s*if \(out->len != 16\) return ts_polyglot_fail_must\(env, true, fn, path, "have 16 bytes"\);/);
+  assert.match(bytes, /return ts_polyglot_make_bytes\(env, value\);/);
+  assert.doesNotMatch(arrayHelpers(list(u8)), /out->len != /);
+});
+
+test("cleanup frees an array's elements then its storage, with a loop index per depth, and leaves a byte view alone", () => {
+  assert.deepEqual(cleanup(list(str), "arg0"), ["{ size_t i0; for (i0 = 0; i0 < arg0.len; i0++) { free(((ts_polyglot_string*)arg0.ptr)[i0].ptr); } }", "free(arg0.ptr);"]);
+  assert.deepEqual(cleanup(list(i32), "arg0"), ["free(arg0.ptr);"]);
+  assert.deepEqual(cleanup(list(u8), "arg0"), []);
+  assert.deepEqual(cleanup(list(list(str)), "arg1"), ["{ size_t i0; for (i0 = 0; i0 < arg1.len; i0++) { { size_t i1; for (i1 = 0; i1 < ((ts_polyglot_array*)arg1.ptr)[i0].len; i1++) { free(((ts_polyglot_string*)((ts_polyglot_array*)arg1.ptr)[i0].ptr)[i1].ptr); } } free(((ts_polyglot_array*)arg1.ptr)[i0].ptr); } }", "free(arg1.ptr);"]);
+});
+
+test("readArgument and makeResult route arrays to their helpers and pass a string's bound", () => {
+  assert.deepEqual(readArgument({ ...str, max: 15 }, "v", "x", "fn, path"), ["if (!ts_polyglot_read_string(env, v, &x, 15, fn, path)) goto fail;"]);
+  assert.deepEqual(readArgument(str, "v", "x", "fn, path"), ["if (!ts_polyglot_read_string(env, v, &x, SIZE_MAX, fn, path)) goto fail;"]);
+  assert.deepEqual(readArgument(list(i32), "v", "x", "fn, path", "return false;"), ["if (!ts_polyglot_read_array_int_int32_t(env, v, &x, fn, path)) return false;"]);
+  assert.deepEqual(makeResult(list(list(str)), "v", "x"), ["x = ts_polyglot_make_array_array_string(env, v);"]);
+});
+
+test("the glue declares every struct and array helper before defining them, each once", () => {
+  const point: AbiType = { kind: "struct", c: "struct Point", name: "Point", fields: [{ name: "x", member: "x", type: i32 }] };
+  const poly: AbiType = { kind: "struct", c: "struct Poly", name: "Poly", fields: [{ name: "pts", member: "pts", type: list(point, 2) }] };
+  const callee = { name: "f", params: [list(list(point)), poly], returns: list(point, 2), reportsErrors: false };
+  const fn = { name: "f", nameStart: 0, callee: "f", params: [{ name: "a", type: { kind: "unknown", spelling: "" } }, { name: "b", type: { kind: "unknown", spelling: "" } }], returns: { kind: "void", spelling: "void" }, signature: "" } as NativeFunction;
+  const glue = glueSource({ functions: [fn], structs: [] }, { prelude: "", libs: [], callee: () => callee });
+  for (const name of ["ts_polyglot_read_Point", "ts_polyglot_read_Poly", "ts_polyglot_read_array_struct_struct_Point", "ts_polyglot_read_array_array_struct_struct_Point", "ts_polyglot_read_array_2_struct_struct_Point"]) {
+    const occurrences = glue.split(`static bool ${name}(`);
+    assert.equal(occurrences.length - 1, 2, `${name}: one prototype and one definition`);
+    // The first occurrence is the prototype: its line ends the declaration.
+    assert.ok(occurrences[1]!.split("\n")[0]!.endsWith(";"), `${name} is declared before it is defined`);
+  }
 });
