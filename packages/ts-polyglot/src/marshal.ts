@@ -26,6 +26,16 @@ export function jsType(type: NativeType, position: "param" | "result" | "field")
       return type.name;
     case "reference":
       return jsType(type.to, position);
+    case "array": {
+      // Unsigned bytes are a buffer whatever the length; `char`, `signed char` and `i8` elements are numbers.
+      if (type.of.kind === "int" && type.of.bits === 8 && !type.of.signed) return "Uint8Array";
+      // The element's own type in this position: `readonly` goes all the way down for a parameter.
+      const element = jsType(type.of, position);
+      // A union or a nested readonly element needs parentheses before `[]`; a tuple's entries don't.
+      const wrapped = element.includes("|") || element.startsWith("readonly") ? `(${element})` : element;
+      const inner = type.length === undefined ? `${wrapped}[]` : `[${Array.from({ length: type.length }, () => element).join(", ")}]`;
+      return position === "param" ? `readonly ${inner}` : inner;
+    }
     default:
       throw new Error(`ts-polyglot: ${type.spelling} isn't marshaled`);
   }

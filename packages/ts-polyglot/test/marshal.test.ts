@@ -34,3 +34,25 @@ test("abiId tells element types apart by C spelling, kind, bound and length", ()
   assert.equal(abiId({ kind: "array", c: "ts_polyglot_array", of: { kind: "float", c: "float", bits: 32 }, length: 3 }), "array_3_float_float");
   assert.equal(abiId({ kind: "array", c: "ts_polyglot_array", of: { kind: "array", c: "ts_polyglot_array", of: point } }), "array_array_struct_struct_Point");
 });
+
+test("jsType for arrays: readonly in parameters, tuples for fixed lengths, Uint8Array for unsigned bytes, parentheses around unions and nested readonly", () => {
+  const arr = (of: NativeType, length?: number): NativeType => ({ kind: "array", of, length, spelling: "x" });
+  const f64: NativeType = { kind: "float", bits: 64, spelling: "f64" };
+  assert.equal(jsType(arr(int(32, true)), "param"), "readonly number[]");
+  assert.equal(jsType(arr(int(32, true)), "result"), "number[]");
+  assert.equal(jsType(arr(int(64, true)), "param"), "readonly (number | bigint)[]");
+  assert.equal(jsType(arr(int(64, true)), "field"), "bigint[]");
+  assert.equal(jsType(arr({ kind: "string", nullable: true, spelling: "c" }), "result"), "(string | null)[]");
+  assert.equal(jsType(arr(arr(f64)), "param"), "readonly (readonly number[])[]");
+  assert.equal(jsType(arr(arr(f64)), "result"), "number[][]");
+  assert.equal(jsType(arr(f64, 3), "param"), "readonly [number, number, number]");
+  assert.equal(jsType(arr(f64, 3), "field"), "[number, number, number]");
+  assert.equal(jsType(arr(arr(f64, 2)), "result"), "[number, number][]");
+  assert.equal(jsType(arr(arr(int(64, false), 2)), "param"), "readonly (readonly [number | bigint, number | bigint])[]");
+  assert.equal(jsType(arr(int(8, false)), "param"), "Uint8Array");
+  assert.equal(jsType(arr(int(8, false), 16), "result"), "Uint8Array");
+  assert.equal(jsType(arr(int(8, true)), "param"), "readonly number[]");
+  assert.equal(jsType(arr({ kind: "struct", name: "Point", spelling: "Point" }), "field"), "Point[]");
+  assert.equal(jsType({ kind: "string", nullable: false, max: 15, spelling: "char[16]" }, "field"), "string");
+  assert.equal(jsType({ kind: "reference", mutable: false, to: arr(int(32, true)), spelling: "&[i32]" }, "param"), "readonly number[]");
+});

@@ -70,3 +70,15 @@ test("strings: const char* is string | null, the owning and view types are strin
   assert.match(checkVerbatim("s.cpp", "std::string shout(const std::string& s, std::string_view v, std::string o) { return o; }\n"), /shout\(s: string, v: string, o: string\): string;/);
   assert.match(checkVerbatim("s.rs", "pub fn shout(s: &str, o: String, r: &String) -> String { o }\npub fn motto() -> &'static str { \"\" }\n"), /shout\(s: string, o: string, r: string\): string;\n.*\nexport declare function motto\(\): string;/);
 });
+
+test("array parameters and results, a skipped length parameter, and interface fields with arrays", () => {
+  const text = checkVerbatim("v.c", "#include <stddef.h>\n#define LEN 3\nstruct Poly { int xs[4]; char name[16]; unsigned char key[LEN]; };\ndouble mean(const double xs[], size_t n) { return 0; }\nfloat norm(const float v[3]) { return 0; }\nstruct Poly same(struct Poly p) { return p; }\n");
+  assert.match(text, /export interface Poly \{\n  xs: \[number, number, number, number\];\n  name: string;\n  key: Uint8Array;\n\}/);
+  assert.match(text, /`double mean\(const double xs\[\], size_t n\)` from v\.c[^\n]*\nexport declare function mean\(xs: readonly number\[\]\): number;/);
+  assert.match(text, /export declare function norm\(v: readonly \[number, number, number\]\): number;/);
+});
+
+test("Rust and C++ sequences in both positions", () => {
+  assert.match(checkVerbatim("v.rs", "pub fn evens(xs: Vec<i32>) -> Vec<i32> { xs }\npub fn names(ns: &[String]) -> Vec<Vec<String>> { Vec::new() }\n"), /evens\(xs: readonly number\[\]\): number\[\];\n[^\n]*\n[^\n]*names\(ns: readonly string\[\]\): string\[\]\[\];/);
+  assert.match(checkVerbatim("v.cpp", "#include <vector>\n#include <string>\nstd::vector<std::string> split(const std::string& s) { return {}; }\n"), /split\(s: string\): string\[\];/);
+});
