@@ -4,7 +4,7 @@
 // through the Node-API boundary takes node down. The shim also converts what isn't C: the
 // std::string family, and structs that hold it, which cross through a mirror struct.
 import { cFamilyModule } from "./c-family.ts";
-import { cAbi } from "./c-types.ts";
+import { cAbi, mirrored, needsMirror } from "./c-types.ts";
 import type { AbiType, Bridge, BridgeInput, LanguageModule } from "./language.ts";
 import { structsInDependencyOrder, type NativeFunction, type NativeModule, type NativeType, type Param } from "../signatures.ts";
 
@@ -39,19 +39,9 @@ export function cppBridge(input: BridgeInput): Bridge {
   };
 }
 
-/** Whether a struct holds text the shim has to convert: a std::string-family field, directly or in a struct it holds. */
-function holdsText(abi: AbiType): boolean {
-  return abi.kind === "struct" && abi.fields.some((field) => field.type.kind === "string" || holdsText(field.type));
-}
-
 /** The shape the glue sees: the user's own type, except a struct that holds text, which crosses as its mirror. */
 function shape(type: NativeType, module: NativeModule): AbiType {
   return mirrored(cAbi(type, module));
-}
-
-function mirrored(abi: AbiType): AbiType {
-  if (abi.kind !== "struct" || !holdsText(abi)) return abi;
-  return { ...abi, c: `ts_polyglot_${abi.name}`, fields: abi.fields.map((field) => ({ ...field, type: mirrored(field.type) })) };
 }
 
 /** For every struct that holds text: the mirror typedef and the two conversions, fields first so the typedefs compile. */
@@ -59,7 +49,7 @@ function mirrors(module: NativeModule): string[] {
   const lines: string[] = [];
   for (const struct of structsInDependencyOrder(module)) {
     const abi = cAbi({ kind: "struct", name: struct.name, spelling: struct.spelling }, module);
-    if (abi.kind !== "struct" || !holdsText(abi)) continue;
+    if (abi.kind !== "struct" || !needsMirror(abi)) continue;
     const mirror = mirrored(abi) as AbiType & { kind: "struct" };
     lines.push(
       `typedef struct { ${mirror.fields.map((field) => `${field.type.c} ${field.member};`).join(" ")} } ${mirror.c};`,
@@ -82,14 +72,14 @@ function mirrors(module: NativeModule): string[] {
 /** The user's value for a mirror field's. */
 function fromMirror(field: NativeType, abi: AbiType, expr: string): string {
   if (abi.kind === "string") return `${field.spelling === "std::string_view" ? "std::string_view" : "std::string"}(${expr}.ptr, ${expr}.len)`;
-  if (abi.kind === "struct" && holdsText(abi)) return `ts_polyglot__from_${abi.name}(${expr})`;
+  if (abi.kind === "struct" && needsMirror(abi)) return `ts_polyglot__from_${abi.name}(${expr})`;
   return expr;
 }
 
 /** The mirror field's value for the user's. */
 function toMirror(abi: AbiType, expr: string): string {
   if (abi.kind === "string") return `ts_polyglot__own(${expr}.data(), ${expr}.size())`;
-  if (abi.kind === "struct" && holdsText(abi)) return `ts_polyglot__to_${abi.name}(${expr})`;
+  if (abi.kind === "struct" && needsMirror(abi)) return `ts_polyglot__to_${abi.name}(${expr})`;
   return expr;
 }
 
@@ -106,7 +96,7 @@ export function cppShim(fn: NativeFunction, module: NativeModule): string {
   const body =
     returns.kind === "void" ? `${call};`
     : returns.kind === "string" ? `auto ts_polyglot_result = ${call}; return ts_polyglot__own(ts_polyglot_result.data(), ts_polyglot_result.size());`
-    : holdsText(returns) ? `auto ts_polyglot_result = ${call}; return ts_polyglot__to_${returns.kind === "struct" ? returns.name : ""}(ts_polyglot_result);`
+    : needsMirror(returns) ? `auto ts_polyglot_result = ${call}; return ts_polyglot__to_${returns.kind === "struct" ? returns.name : ""}(ts_polyglot_result);`
     : `return ${call};`;
   return [
     `static ${returns.c} ts_polyglot__shim_${fn.name}(${params}) {`,
@@ -123,6 +113,6 @@ export function cppShim(fn: NativeFunction, module: NativeModule): string {
 function cppArgument(param: Param, module: NativeModule): string {
   const type = param.type.kind === "reference" ? param.type.to : param.type;
   if (type.kind === "string" && !type.nullable) return `${type.spelling === "std::string_view" ? "std::string_view" : "std::string"}(${param.name}.ptr, ${param.name}.len)`;
-  if (type.kind === "struct" && holdsText(cAbi(type, module))) return `ts_polyglot__from_${type.name}(${param.name})`;
+  if (type.kind === "struct" && needsMirror(cAbi(type, module))) return `ts_polyglot__from_${type.name}(${param.name})`;
   return param.name;
 }

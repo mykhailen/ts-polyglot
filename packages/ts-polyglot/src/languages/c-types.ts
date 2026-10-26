@@ -86,7 +86,20 @@ export function cAbi(type: NativeType, module: NativeModule): AbiType {
   if (type.kind === "int" && entry) return { kind: "int", c: entry.c, bits: type.bits, signed: type.signed, min: entry.min!, max: entry.max! };
   if (type.kind === "float" && entry) return { kind: "float", c: entry.c, bits: type.bits };
   if ((type.kind === "bool" || type.kind === "void") && entry) return { kind: type.kind, c: entry.c };
-  // A `const char*` crosses as itself; the std::string family crosses as the ABI string the shim converts.
-  if (type.kind === "string") return type.nullable ? { kind: "cstring", c: "const char*" } : { kind: "string", c: "ts_polyglot_string" };
+  // A `const char*` crosses as itself; the std::string family and a char[N] cross as the ABI string the shim converts.
+  if (type.kind === "string") return type.nullable ? { kind: "cstring", c: "const char*" } : { kind: "string", c: "ts_polyglot_string", ...(type.max === undefined ? {} : { max: type.max }) };
+  if (type.kind === "array") return { kind: "array", c: "ts_polyglot_array", of: cAbi(type.of, module), ...(type.length === undefined ? {} : { length: type.length }) };
   throw new Error(`ts-polyglot: ${type.spelling} isn't marshaled yet`);
+}
+
+/** A struct the glue can't write as the user's own type: it holds a string (std::string or char[N]) or an array, directly or in a struct it holds. */
+export function needsMirror(abi: AbiType): boolean {
+  return abi.kind === "struct" && abi.fields.some((field) => field.type.kind === "string" || field.type.kind === "array" || needsMirror(field.type));
+}
+
+/** The ABI shape with `c` as `ts_polyglot_<Name>` for every struct that needs a mirror, through fields and array elements. */
+export function mirrored(abi: AbiType): AbiType {
+  if (abi.kind === "array") return { ...abi, of: mirrored(abi.of) };
+  if (abi.kind !== "struct" || !needsMirror(abi)) return abi;
+  return { ...abi, c: `ts_polyglot_${abi.name}`, fields: abi.fields.map((field) => ({ ...field, type: mirrored(field.type) })) };
 }

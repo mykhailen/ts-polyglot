@@ -200,3 +200,44 @@ test("Windows ignores compiler, CC and CXX", { skip: !windows }, () => {
   assert.equal(status, 0, stderr);
   assert.deepEqual(output, { c: 0, cpp: 0 });
 });
+
+test("C arrays: sequences with their length, fixed arrays, bytes from any Uint8Array, counted and bounded strings, structs with array fields", () => {
+  const { status, stderr, output } = run("project");
+  assert.equal(status, 0, stderr);
+  assert.equal(output.mean, 2);
+  assert.equal(output.meanEmpty, 0);
+  assert.equal(output.dot, 32);
+  assert.equal(output.checksum, 1 * 31 * 31 + 2 * 31 + 3);
+  assert.equal(output.checksumBuffer, output.checksum);
+  assert.equal(output.checksumView, output.checksum);
+  assert.equal(output.checksumEmpty, 0);
+  assert.equal(output.checksumBig, 0);
+  assert.equal(output.longest, "bbb");
+  assert.equal(output.countA, "2n");
+  assert.equal(output.norm, 25);
+  assert.equal(output.polyArea, 2 + 12 + 5 + 7);
+  assert.deepEqual(output.relabel, { pts: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "héllo", key: { "0": 0, "1": 0, "2": 0, "3": 9 }, grid: [[1, 2], [3, 4]] });
+  assert.equal(output.relabelLongest, "x");
+  assert.equal(output.totalPts, 5);
+  assert.equal(output.trace, 5);
+  assert.equal(output.meanBig, 499999.5);
+});
+
+test("C arrays: every wrong input is a TypeError or RangeError with the path, a length mismatch an Error", () => {
+  const { output } = run("project");
+  assert.equal(output.badElement.error, "TypeError: mean(): xs[1] must be a number");
+  assert.equal(output.hole.error, "TypeError: mean(): xs[1] must be a number");
+  assert.equal(output.notArray.error, "TypeError: mean(): xs must be an array");
+  assert.equal(output.proxy.error, "TypeError: mean(): xs must be an array");
+  assert.equal(output.argumentsObject.error, "TypeError: mean(): xs must be an array");
+  assert.equal(output.wrongLength.error, "RangeError: norm(): v must have 3 elements");
+  assert.equal(output.lengthsDiffer.error, "Error: dot(): b must have as many elements as a");
+  assert.equal(output.nameTooLong.error, "RangeError: relabel(): p.name must be at most 15 UTF-8 bytes without NUL characters");
+  assert.equal(output.nameWithNul.error, "RangeError: relabel(): p.name must be at most 15 UTF-8 bytes without NUL characters");
+  assert.equal(output.keyLength.error, "RangeError: relabel(): p.key must have 4 bytes");
+  assert.equal(output.nestedPath.error, "TypeError: trace(): m[1][1] must be an integer between -2147483648 and 2147483647");
+  assert.equal(output.notBytes.error, "TypeError: checksum(): data must be a Uint8Array");
+  assert.equal(output.bytesArray.error, "TypeError: checksum(): data must be a Uint8Array");
+  assert.equal(output.bytesBuffer.error, "TypeError: checksum(): data must be a Uint8Array");
+  assert.equal(output.detached.error, "TypeError: checksum(): data must be a Uint8Array that isn't detached");
+});

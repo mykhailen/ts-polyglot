@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test, { before } from "node:test";
 
-import { cBridge } from "../src/languages/c.ts";
+import { cBridge, cMirrors, cShim } from "../src/languages/c.ts";
 import { cppBridge, cppShim } from "../src/languages/cpp.ts";
 import { languages, loadLanguage, parseModule } from "../src/languages/index.ts";
 import type { BridgeInput } from "../src/languages/language.ts";
@@ -18,7 +18,7 @@ const input = (file: string, module: NativeModule): BridgeInput => ({ file, modu
 test("the C bridge includes the file and calls the function with its own types, no error slot", () => {
   const module = parseModule("long echo_long(long x) { return x; }\nunsigned char u(void) { return 0; }\n", "c");
   const bridge = cBridge(input("D:\\p\\values.c", module));
-  assert.equal(bridge.prelude, '#include "D:/p/values.c"');
+  assert.match(bridge.prelude, /^#include "D:\/p\/values\.c"\n/);
   assert.deepEqual(bridge.callee(module.functions[0]!), { name: "echo_long", params: [{ kind: "int", c: "long", bits: 64, signed: true, min: "LONG_MIN", max: "LONG_MAX" }], returns: { kind: "int", c: "long", bits: 64, signed: true, min: "LONG_MIN", max: "LONG_MAX" }, reportsErrors: false });
   assert.deepEqual(bridge.callee(module.functions[1]!).returns, { kind: "int", c: "unsigned char", bits: 8, signed: false, min: "0", max: "UCHAR_MAX" });
   assert.deepEqual(bridge.libs, []);
@@ -96,4 +96,59 @@ test("C++ uses the user's struct unless it holds a std::string, then a mirror; R
   assert.match(rustPrelude(rs), /typedef struct \{ int32_t x; int64_t m_long; \} ts_polyglot_Point;/);
   const abi = rustAbi(rs.functions[0]!.params[0]!.type, rs);
   assert.deepEqual(abi.kind === "struct" && abi.fields.map((f) => [f.name, f.member]), [["x", "x"], ["long", "m_long"]]);
+});
+
+test("the C bridge shims a function with array parameters: the length is the array's, arrays in a row must agree, a narrow length type is checked", () => {
+  const module = parseModule("double mean(const double xs[], int n) { return 0; }\ndouble dot(const double a[], const double b[], size_t n) { return 0; }\n", "c");
+  const bridge = cBridge(input("D:\\p\\v.c", module));
+  assert.deepEqual(bridge.callee(module.functions[0]!), { name: "ts_polyglot__shim_mean", params: [{ kind: "array", c: "ts_polyglot_array", of: { kind: "float", c: "double", bits: 64 } }], returns: { kind: "float", c: "double", bits: 64 }, reportsErrors: true });
+  assert.equal(cShim(module.functions[0]!, module), [
+    "static double ts_polyglot__shim_mean(ts_polyglot_array xs, ts_polyglot_string* error) {",
+    "  double ts_polyglot_out = {0};",
+    '  if (xs.len > (size_t)INT_MAX) { *error = ts_polyglot__own_text("mean(): xs has more elements than int holds"); goto done; }',
+    "  ts_polyglot_out = mean((double const*)xs.ptr, (int)xs.len);",
+    "done:",
+    "  return ts_polyglot_out;",
+    "}",
+    "",
+  ].join("\n"));
+  const dot = cShim(module.functions[1]!, module);
+  assert.match(dot, /if \(b\.len != a\.len\) \{ \*error = ts_polyglot__own_text\("dot\(\): b must have as many elements as a"\); goto done; \}/);
+  assert.match(dot, /dot\(\(double const\*\)a\.ptr, \(double const\*\)b\.ptr, \(size_t\)a\.len\)/);
+  assert.doesNotMatch(dot, /SIZE_MAX/);
+  assert.match(bridge.prelude, /^#include "D:\/p\/v\.c"\n/);
+  assert.match(bridge.prelude, /static ts_polyglot_array ts_polyglot__own_array\(size_t count, size_t size\)/);
+});
+
+test("the C bridge mirrors a struct with array or char[N] fields and converts it both ways, nested arrays included", () => {
+  const module = parseModule("struct Point { int x; int y; };\nstruct Poly { struct Point pts[2]; char name[8]; int grid[2][2]; };\ndouble area(struct Poly p) { return 0; }\nstruct Poly relabel(struct Poly p, const char* name) { return p; }\n", "c");
+  const [mirror] = cMirrors(module);
+  assert.match(mirror!, /^typedef struct \{ ts_polyglot_array pts; ts_polyglot_string name; ts_polyglot_array grid; \} ts_polyglot_Poly;\n/);
+  assert.match(mirror!, /static struct Poly ts_polyglot__from_Poly\(const ts_polyglot_Poly\* m\) \{/);
+  assert.match(mirror!, /v\.pts\[i0\] = \(\(struct Point const\*\)m->pts\.ptr\)\[i0\];/);
+  assert.match(mirror!, /memcpy\(v\.name, m->name\.ptr, m->name\.len\); v\.name\[m->name\.len\] = 0;/);
+  assert.match(mirror!, /v\.grid\[i0\]\[i1\] = \(\(int const\*\)\(\(ts_polyglot_array const\*\)m->grid\.ptr\)\[i0\]\.ptr\)\[i1\];/);
+  assert.match(mirror!, /static ts_polyglot_Poly ts_polyglot__to_Poly\(const struct Poly\* v\) \{/);
+  assert.match(mirror!, /m\.pts = ts_polyglot__own_array\(2, sizeof\(struct Point\)\);/);
+  assert.match(mirror!, /m\.name = ts_polyglot__own\(v->name, ts_polyglot__bounded\(v->name, 8\)\);/);
+  assert.match(mirror!, /\(\(int\*\)\(\(ts_polyglot_array\*\)m\.grid\.ptr\)\[i0\]\.ptr\)\[i1\] = v->grid\[i0\]\[i1\];/);
+  const bridge = cBridge(input("D:\\p\\v.c", module));
+  assert.equal(bridge.callee(module.functions[0]!).params[0]!.c, "ts_polyglot_Poly");
+  assert.equal(bridge.callee(module.functions[1]!).returns.c, "ts_polyglot_Poly");
+  assert.match(cShim(module.functions[1]!, module), /  struct Poly ts_polyglot_result;\n[\s\S]*  ts_polyglot_result = relabel\(ts_polyglot__from_Poly\(&p\), name\);\n  ts_polyglot_out = ts_polyglot__to_Poly\(&ts_polyglot_result\);\n  return ts_polyglot_out;/);
+  const plain = parseModule("struct Point { int x; int y; };\nint area(struct Point p) { return 0; }\n", "c");
+  assert.equal(cBridge(input("D:\\p\\s.c", plain)).callee(plain.functions[0]!).name, "area");
+});
+
+test("a C sequence or fixed array whose elements need converting goes through a temporary the shim frees", () => {
+  const module = parseModule("struct Poly { char name[8]; };\nint total(const struct Poly polys[], size_t n) { return 0; }\nint trace(const int m[2][2]) { return 0; }\n", "c");
+  const total = cShim(module.functions[0]!, module);
+  assert.match(total, /  struct Poly\* ts_polyglot_tmp_polys = NULL;\n  size_t i0;\n/);
+  assert.match(total, /ts_polyglot_tmp_polys = \(struct Poly\*\)malloc\(\(polys\.len \? polys\.len : 1\) \* sizeof\(struct Poly\)\);\n  if \(!ts_polyglot_tmp_polys\) \{ \*error = ts_polyglot__own_text\("total\(\): can't allocate polys"\); goto done; \}/);
+  assert.match(total, /for \(i0 = 0; i0 < polys\.len; i0\+\+\) \{ ts_polyglot_tmp_polys\[i0\] = ts_polyglot__from_Poly\(&\(\(ts_polyglot_Poly const\*\)polys\.ptr\)\[i0\]\); \}/);
+  assert.match(total, /ts_polyglot_out = total\(ts_polyglot_tmp_polys, \(size_t\)polys\.len\);\ndone:\n  free\(ts_polyglot_tmp_polys\);\n  return ts_polyglot_out;/);
+  const trace = cShim(module.functions[1]!, module);
+  assert.match(trace, /  int ts_polyglot_tmp_m\[2\]\[2\];\n  size_t i0, i1;\n/);
+  assert.match(trace, /ts_polyglot_tmp_m\[i0\]\[i1\] = \(\(int const\*\)\(\(ts_polyglot_array const\*\)m\.ptr\)\[i0\]\.ptr\)\[i1\];/);
+  assert.match(trace, /ts_polyglot_out = trace\(ts_polyglot_tmp_m\);/);
 });

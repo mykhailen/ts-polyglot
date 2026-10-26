@@ -5,6 +5,10 @@ import { byte_len, clamp, echo_ref, echo_usize, fib, max_level, motto, next_char
 import { dist, rename, shift } from "./points.rs";
 import { area, grow, retag } from "./shapes.c";
 import { count, echo_i8, echo_long, echo_u64, half, negate } from "./values.c";
+import { area as poly_area, checksum, count_a, dot, longest, mean, norm, relabel, total_pts, trace } from "./vectors.c";
+
+// The fixture has no @types/node; a Buffer is a Uint8Array, which is all the glue needs to know.
+declare const Buffer: { from(bytes: number[]): Uint8Array };
 
 // What a call threw, as "Name: message", so the test can check the class and the text.
 const attempt = (f: () => unknown) => {
@@ -81,6 +85,39 @@ const output = {
   sameEmpty: same(""),
   maxLevel: max_level(),
   throwingGetter: attempt(() => area({ get x() { throw new Error("getter"); }, y: 1 } as never)),
+  // C arrays.
+  mean: mean([1, 2, 3]),
+  meanEmpty: mean([]),
+  dot: dot([1, 2, 3], [4, 5, 6]),
+  checksum: checksum(new Uint8Array([1, 2, 3])),
+  checksumBuffer: checksum(Buffer.from([1, 2, 3])),
+  checksumView: checksum(new Uint8Array([9, 1, 2, 3, 9]).subarray(1, 4)),
+  checksumEmpty: checksum(new Uint8Array(0)),
+  checksumBig: checksum(new Uint8Array(1_000_000)),
+  longest: longest(["a", "bbb", null, "cc"]),
+  countA: count_a("a\0a"),
+  norm: norm([3, 4, 0]),
+  polyArea: poly_area({ pts: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "p", key: new Uint8Array([7, 0, 0, 0]), grid: [[0, 0], [0, 5]] }),
+  relabel: relabel({ pts: [{ x: 1, y: 2 }, { x: 3, y: 4 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "p", key: new Uint8Array(4), grid: [[1, 2], [3, 4]] }, "héllo"),
+  relabelLongest: relabel({ pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "123456789012345", key: new Uint8Array(4), grid: [[0, 0], [0, 0]] }, "x").name,
+  totalPts: total_pts([{ pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "ab", key: new Uint8Array(4), grid: [[0, 0], [0, 0]] }, { pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "cde", key: new Uint8Array(4), grid: [[0, 0], [0, 0]] }]),
+  trace: trace([[1, 2], [3, 4]]),
+  meanBig: mean(Array.from({ length: 1_000_000 }, (_, i) => i)),
+  badElement: attempt(() => mean([1, "2"] as never)),
+  hole: attempt(() => mean([1, , 3] as never)),
+  notArray: attempt(() => mean(new Set([1]) as never)),
+  proxy: attempt(() => mean(new Proxy([1, 2], {}))),
+  argumentsObject: attempt(function () { return mean(arguments as never); }),
+  wrongLength: attempt(() => norm([1, 2] as never)),
+  lengthsDiffer: attempt(() => dot([1, 2], [1])),
+  nameTooLong: attempt(() => relabel({ pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "1234567890123456", key: new Uint8Array(4), grid: [[0, 0], [0, 0]] }, "x")),
+  nameWithNul: attempt(() => relabel({ pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "a\0b", key: new Uint8Array(4), grid: [[0, 0], [0, 0]] }, "x")),
+  keyLength: attempt(() => relabel({ pts: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }], name: "a", key: new Uint8Array(3), grid: [[0, 0], [0, 0]] }, "x")),
+  nestedPath: attempt(() => trace([[1, 2], [3, "4"]] as never)),
+  notBytes: attempt(() => checksum(new Int8Array(2) as never)),
+  bytesArray: attempt(() => checksum([1, 2] as never)),
+  bytesBuffer: attempt(() => checksum(new ArrayBuffer(2) as never)),
+  detached: attempt(() => { const b = new ArrayBuffer(4); const v = new Uint8Array(b); structuredClone(b, { transfer: [b] }); return checksum(v); }),
 };
 
 // JSON has no bigint; print them with an `n` so the test can tell them from numbers.
