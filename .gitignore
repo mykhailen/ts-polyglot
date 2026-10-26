@@ -6,3 +6,4 @@ coverage/
 .env
 .claude/worktrees/
 .superpowers
+*.tgz

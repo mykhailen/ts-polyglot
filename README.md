@@ -44,8 +44,9 @@ import { add } from "./add.cpp";
 import { fib } from "./numbers.rs";
 
 add(1, 2); // 3, typed as (a: number, b: number) => number
-fib(50); // 12586269025, typed as (n: number) => number
-add("1", 2); // error in tsc and the editor; at runtime a TypeError: add(): a must be a number
+fib(50); // 12586269025n, typed as (n: number) => bigint
+add("1", 2); // error in tsc and the editor; at runtime a TypeError:
+             // add(): a must be an integer between -2147483648 and 2147483647
 ```
 
 - **Real types, no `.d.ts`.** TypeScript reads the signatures from the native source itself, so
@@ -80,8 +81,9 @@ wherever tree-sitter finds them: at the top level, inside `extern "C" { }` block
 inside Rust `pub mod`s. 64-bit integers are `bigint`s, conversions are strict (`TypeError` for the
 wrong type, `RangeError` for a value that doesn't fit), and a C++ exception or Rust panic becomes an
 `Error`. Pointers, out-parameters and enums don't cross yet. Tested on Windows (MSVC) and Linux (gcc and
-clang); the macOS recipe is written but not yet verified. The
-[package README](packages/ts-polyglot/README.md) has the exact type tables and limits.
+clang); the macOS recipe is written but not yet verified. The package README has the exact
+[type mapping](packages/ts-polyglot/README.md#marshaling) and the
+[limits](packages/ts-polyglot/README.md#limits).
 
 ## Get started
 

@@ -102,7 +102,7 @@ async function main(): Promise<number> {
   if (shown !== ".") steps.push(`cd ${shown}`);
   if (!installed) steps.push(`${manager} install`);
   steps.push(`${runScriptCommand(manager, "typecheck")}    type-checks src/main.ts and the native files`);
-  steps.push(`${runScriptCommand(manager, "start")}            builds the addons on the first run, then runs src/main.ts`);
+  steps.push(`${runScriptCommand(manager, "start")}            builds the addons once, then runs src/main.ts`);
   if (ide === "vscode") {
     steps.push("");
     // Lines under 70 characters: the note wraps at the terminal width, and a wrapped line reads as
